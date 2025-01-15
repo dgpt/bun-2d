@@ -1,7 +1,7 @@
 import { Entity } from '../lib/Entity'
 import { Events } from '../lib/events'
 import { openDialog } from '../lib/Dialog'
-import { Layers } from '../lib/layers'
+import { Layers } from './layers'
 import { Animations } from '../lib/animations'
 
 const DIALOG_TEXT = "Hello! I'm Rupert. Press Space or Enter to continue."

@@ -1,16 +1,19 @@
 import { Events as MatterEvents, type Engine, type IEventCollision } from 'matter-js'
 import type { Entity } from './Entity'
 import { getLayerListeners } from './layers'
-import { emit } from './events'
+import { Events, emit } from './events'
 
-export const initCollisions = (engine: Engine): void => {
-  // Listen for collision events
+export const initCollisions = (engine: Engine): () => void => {
+  // Listen for collision events from Matter.js
   MatterEvents.on(engine, 'collisionStart', (event: IEventCollision<Engine>) => {
     event.pairs.forEach(pair => {
       const entityA = pair.bodyA.plugin?.entity as Entity | undefined
       const entityB = pair.bodyB.plugin?.entity as Entity | undefined
 
       if (!entityA || !entityB) return
+
+      // Emit collision event first
+      emit<Events.collision>(Events.collision, { a: entityA, b: entityB })
 
       // Get all registered layer listeners
       const layerListeners = getLayerListeners() as Map<string, Set<Entity>>
@@ -24,4 +27,9 @@ export const initCollisions = (engine: Engine): void => {
       })
     })
   })
+
+  // Return cleanup function
+  return () => {
+    MatterEvents.off(engine, 'collisionStart')
+  }
 }

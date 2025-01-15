@@ -1,44 +1,108 @@
+import type { Entity } from './Entity'
+import type { Animations } from './animations'
+import type { IPointData } from 'pixi.js'
 import { utils } from 'pixi.js'
+
 const { EventEmitter } = utils
 
 export enum Events {
+  // System events
   cleanup = 'cleanup',
   sceneChange = 'sceneChange',
+  pauseChange = 'pauseChange',
+
+  // DOM events
   keyDown = 'keydown',
   keyUp = 'keyup',
   resize = 'resize',
+
+  // PIXI events
   pointerTap = 'pointertap',
+  pointerDown = 'pointerdown',
+  pointerUp = 'pointerup',
+  pointerMove = 'pointermove',
+
+  // Touch events
+  touchMove = 'touch:move',
+
+  // Game events
   dialogOpen = 'dialog:open',
   dialogClose = 'dialog:close',
-  pauseChange = 'pauseChange',
-  collision = 'collision'
+  collision = 'collision',
+  animation = 'animation'
 }
 
-// Global event emitter for system-wide events (private)
-const globalEmitter = new EventEmitter()
+export type CollisionEvent = {
+  a: Entity
+  b: Entity
+}
 
-// Map of DOM events to their window event names
-const DOM_EVENTS = new Set([
-  'keydown',
-  'keyup',
-  'resize',
-  'pointertap'
+// Type for event data
+export type EventData = {
+  [Events.keyDown]: KeyboardEvent
+  [Events.keyUp]: KeyboardEvent
+  [Events.resize]: UIEvent
+  [Events.pointerTap]: { x: number, y: number }
+  [Events.pointerDown]: { x: number, y: number }
+  [Events.pointerUp]: { x: number, y: number }
+  [Events.pointerMove]: { x: number, y: number }
+  [Events.touchMove]: { x: number, y: number }
+  [Events.pauseChange]: boolean
+  [Events.sceneChange]: string
+  [Events.cleanup]: void
+  [Events.dialogOpen]: void
+  [Events.dialogClose]: void
+  [Events.collision]: CollisionEvent
+  [Events.animation]: { type: Animations }
+}
+
+// Type for any event name (known or custom)
+export type EventName = Events
+
+// Type for event data based on event name
+export type EventDataType<E extends EventName> = E extends keyof EventData
+  ? EventData[E] extends void
+    ? undefined
+    : EventData[E]
+  : never
+
+// PIXI events that should use PIXI's event system
+const PIXI_EVENTS = new Set([
+  'pointertap',
+  'pointerdown',
+  'pointerup',
+  'pointermove',
+  'pointerover',
+  'pointerout',
+  'pointerenter',
+  'pointerleave'
 ])
 
-// Initialize DOM event listeners
-if (typeof window !== 'undefined') {
-  DOM_EVENTS.forEach(eventName => {
-    window.addEventListener(eventName, ((e: Event) => {
-      globalEmitter.emit(eventName, e)
-    }) as EventListener)
-  })
+export const isPixiEvent = (event: string): boolean => {
+  return PIXI_EVENTS.has(event)
 }
 
-export const emit = (event: Events | string, data?: any): void => {
-  globalEmitter.emit(event, data)
+// Global event emitter for PIXI events only
+const pixiEmitter = new EventEmitter()
+
+export type EventHandler<E extends EventName> = (
+  event: Event,
+  data: EventDataType<E>
+) => void
+
+export const emit = <E extends EventName>(event: E, data: EventDataType<E>): void => {
+  const customEvent = new CustomEvent(event, { detail: data })
+  window.dispatchEvent(customEvent)
 }
 
-export const on = <T = any>(event: Events | string, fn: (data?: T) => void): () => void => {
-  globalEmitter.on(event, fn)
-  return () => globalEmitter.off(event, fn)
+export const on = <E extends EventName>(
+  event: E,
+  handler: EventHandler<E>
+): () => void => {
+  const wrappedHandler = (e: Event) => {
+    const customEvent = e as CustomEvent<EventDataType<E>>
+    handler(customEvent, customEvent.detail)
+  }
+  window.addEventListener(event, wrappedHandler)
+  return () => window.removeEventListener(event, wrappedHandler)
 }

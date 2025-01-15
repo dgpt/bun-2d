@@ -4,8 +4,6 @@ import type { Entity } from './Entity'
 export enum Layers {
   // Core layer
   entities = 'entities',    // All entities in the game
-  player = 'player',        // Player layer
-  npc = 'npc'              // NPC layer
 }
 
 // Map of layer names to sets of entities

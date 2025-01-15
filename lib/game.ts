@@ -1,7 +1,7 @@
 import { Application, Assets, Container, Texture, Spritesheet } from 'pixi.js'
 import { Engine, World } from 'matter-js'
 import type { Entity } from './Entity'
-import { Events, emit } from './events'
+import { Events, emit, on } from './events'
 import { initCollisions } from './collisions'
 import { Layers, getLayerEntities, addToLayer, removeFromLayer } from './layers'
 
@@ -24,7 +24,7 @@ export const isPaused = (): boolean => {
 export const togglePause = (): void => {
   if (!state) throw new Error('Game not initialized')
   state.isPaused = !state.isPaused
-  emit(Events.pauseChange, state.isPaused)
+  emit<Events.pauseChange>(Events.pauseChange, state.isPaused)
 }
 
 export const init = async (): Promise<Application> => {
@@ -45,12 +45,6 @@ export const init = async (): Promise<Application> => {
   const container = new Container()
   app.stage.addChild(container)
 
-  // Setup scene-wide click handling
-  container.eventMode = 'static'
-  container.hitArea = app.screen
-  container.on('pointertap', (e) => {
-    emit(Events.pointerTap, { x: e.global.x, y: e.global.y })
-  })
 
   state = {
     app,
@@ -60,6 +54,11 @@ export const init = async (): Promise<Application> => {
     animations: {},
     isPaused: false
   }
+
+  // Handle window resize
+  on<Events.resize>(Events.resize, () => {
+    app.resize()
+  })
 
   app.ticker.add(() => {
     if (!state || state.isPaused) return

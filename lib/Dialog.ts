@@ -1,55 +1,45 @@
-import { Container, Text, Graphics } from 'pixi.js'
-import { Events, on, emit } from './events'
-import { Keys } from './keys'
+import { Container, Text } from 'pixi.js'
+import { Events, type EventDataType } from './events'
+import { emit, on } from './events'
 import { getState } from './game'
 
 export class Dialog {
   private container: Container
   private text: Text
-  private bg: Graphics
   private cleanupFns: Array<() => void> = []
   private isOpen = false
 
   constructor(private parentContainer: Container) {
     this.container = new Container()
-
-    // Create semi-transparent background
-    this.bg = new Graphics()
-    this.container.addChild(this.bg)
-
-    // Create text
     this.text = new Text('', {
       fontFamily: 'Arial',
       fontSize: 24,
       fill: 0xffffff,
       wordWrap: true,
-      wordWrapWidth: window.innerWidth - 40
+      wordWrapWidth: 400
     })
-    this.text.x = 20
-    this.text.y = 20
+
     this.container.addChild(this.text)
 
-    // Handle window resize
+    // Handle window resizing
     this.cleanupFns.push(
-      on(Events.resize, () => {
+      on(Events.resize, (event: Event, data: EventDataType<Events.resize>) => {
         this.updateLayout()
       })
     )
 
-    // Handle dialog controls
+    // Handle keyboard input
     this.cleanupFns.push(
-      on(Events.keyDown, (event?: KeyboardEvent) => {
-        if (event && this.isOpen &&
-          (event.key.toLowerCase() === Keys.Space ||
-           event.key.toLowerCase() === Keys.Enter)) {
+      on(Events.keyDown, (event: Event, data: EventDataType<Events.keyDown>) => {
+        if (this.isOpen && (data.key === ' ' || data.key === 'Enter')) {
           this.close()
         }
       })
     )
 
-    // Handle cleanup
+    // Cleanup when dialog is closed
     this.cleanupFns.push(
-      on(Events.cleanup, () => {
+      on(Events.cleanup, (event: Event, data: EventDataType<Events.cleanup>) => {
         this.destroy()
       })
     )
@@ -58,28 +48,25 @@ export class Dialog {
   }
 
   private updateLayout(): void {
-    this.bg.clear()
-    this.bg.beginFill(0x000000, 0.7)
-    this.bg.drawRect(0, 0, window.innerWidth, 100)
-    this.bg.endFill()
-    this.text.style.wordWrapWidth = window.innerWidth - 40
+    const { app } = getState()
+    const { width, height } = app.screen
+    this.text.x = (width - this.text.width) / 2
+    this.text.y = height - this.text.height - 50
   }
 
   open(message: string): void {
     if (this.isOpen) return
-
     this.text.text = message
-    this.parentContainer.addChild(this.container)
     this.isOpen = true
-    emit(Events.dialogOpen)
+    this.parentContainer.addChild(this.container)
+    emit(Events.dialogOpen, undefined)
   }
 
   close(): void {
     if (!this.isOpen) return
-
-    this.parentContainer.removeChild(this.container)
     this.isOpen = false
-    emit(Events.dialogClose)
+    this.parentContainer.removeChild(this.container)
+    emit(Events.dialogClose, undefined)
   }
 
   destroy(): void {

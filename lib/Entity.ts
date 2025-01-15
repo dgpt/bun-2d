@@ -2,8 +2,10 @@ import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Cont
 import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
 import { Layers, addToLayer, removeFromAllLayers, registerLayerListener } from './layers'
 import { getState } from './game'
-import { Events, on } from './events'
+import { Events, on, emit, isPixiEvent, type EventData } from './events'
 import { Animations } from './animations'
+import { Plugin } from './Plugin'
+import type { MovementSettings } from './Actor/movement'
 
 // Default physics values optimized for top-down 2D game
 const DEFAULT_PHYSICS: IBodyDefinition = {
@@ -17,11 +19,15 @@ const DEFAULT_PHYSICS: IBodyDefinition = {
   isSensor: false      // Solid by default
 }
 
-type SetOptions = {
+// Plugin settings type federation
+export interface EntityPluginSettings {}
+
+export type EntityOptions = {
   physics?: Partial<IBodyDefinition>
   static?: boolean
   velocity?: IPointData
   position?: IPointData
+  plugins?: Partial<EntityPluginSettings>
 }
 
 export class Entity extends Container {
@@ -29,13 +35,15 @@ export class Entity extends Container {
   public layers = new Set<string>([Layers.entities])
   public animationSpeed = 0.1
   public staticAnimationDelay = 800
+  public readonly plugins = new Set<string>()
+  private pluginSettings = new Map<string, unknown>()
 
   private garbage: Array<() => void> = []
   private animations: Record<string, string | string[]> = {}
   private currentSprite?: Sprite | AnimatedSprite
-  private currentAnimation?: string
+  private updaters = new Set<() => void>()
 
-  constructor(textureNameOrNames: string | string[], options: SetOptions = {}) {
+  constructor(textureNameOrNames: string | string[], options: EntityOptions = {}) {
     super()
 
     // Create sprite first to get dimensions
@@ -45,7 +53,11 @@ export class Entity extends Container {
     this.animate({
       [Animations.idle]: textureNameOrNames
     })
-    this.playAnimation(Animations.idle)
+
+    // Listen for basic animation events
+    this.on(Events.animation, (event: Event, data: EventData[Events.animation]) => {
+      this.playAnimation(data.type)
+    })
 
     // Create physics body with sprite dimensions
     this.body = Bodies.rectangle(
@@ -79,9 +91,22 @@ export class Entity extends Container {
     this.on(Events.cleanup, () => {
       this.destroy()
     })
+
+    // Setup collision animation handling
+    this.on(Events.collision, () => {
+      // Emit collision animation event
+      emit<Events.animation>(Events.animation, { type: Animations.collision })
+    })
+
+    // Start with idle animation
+    emit<Events.animation>(Events.animation, { type: Animations.idle })
   }
 
-  set sprite(value: string) {
+  get sprite(): Sprite | AnimatedSprite {
+    return this.currentSprite!
+  }
+
+  set sprite(value: string | string[]) {
     this.setSprite(value)
   }
 
@@ -91,6 +116,10 @@ export class Entity extends Container {
 
   set velocity(value: IPointData) {
     Body.setVelocity(this.body, value)
+  }
+
+  get velocity(): IPointData {
+    return this.body.velocity
   }
 
   set static(value: boolean) {
@@ -138,16 +167,24 @@ export class Entity extends Container {
     }
   }
 
-  playAnimation(name: string): Sprite | AnimatedSprite | undefined {
-    if (this.currentAnimation === name) return this.currentSprite
+  playAnimation(name: string | string[]): Sprite | AnimatedSprite | undefined {
+    // Check if it's a registered animation
+    if (typeof name === 'string' && name in this.animations) {
+      return this.setSprite(this.animations[name])
+    }
 
-    const animation = this.animations[name] || name
-
-    this.currentAnimation = name
-    return this.setSprite(animation)
+    // Check if it's a valid texture or array of textures
+    const { textures } = getState()
+    const isValidTexture = (n: string) => n in textures
+    if (
+      (typeof name === 'string' && isValidTexture(name)) ||
+      (Array.isArray(name) && name.every(isValidTexture))
+    ) {
+      return this.setSprite(name)
+    }
   }
 
-  set(options: SetOptions): void {
+  set(options: EntityOptions): void {
     if (options.position) {
       this.setPosition(options.position)
     }
@@ -173,39 +210,29 @@ export class Entity extends Container {
     const { x, y } = this.body.position
     super.position.set(x, y)
     this.rotation = this.body.angle
+
+    // Run all plugin updaters
+    for (const update of this.updaters) {
+      update()
+    }
   }
 
   on<T extends keyof DisplayObjectEvents>(event: T, fn: (...args: [Extract<T, keyof DisplayObjectEvents>]) => void, context?: any): this;
-  on(event: Events | string, fn: (data?: any) => void): this;
+  on<E extends Events>(event: E, fn: (event: Event, data: EventData[E]) => void): this;
+  on(event: string, fn: (event: Event, data: { a: Entity, b: Entity }) => void): this;
   on(event: any, fn: (...args: any[]) => void, context?: any): this {
-    if (typeof event === 'string' && event in Events) {
+    if (isPixiEvent(event)) {
+      // Handle PIXI events
+      super.on(event, fn, context)
+    } else if (event in Events) {
+      // Handle system events
       this.gc(on(event, fn))
-    } else if (typeof event === 'string' && event in Layers) {
+    } else if (typeof event === 'string') {
       // Handle layer collision listening
       this.gc(
         registerLayerListener(this, event),
-        on<{ a: Entity, b: Entity }>(event, (data) => {
-          if (!data) return
-          // Pass the other entity to the callback
-          const other = data.a === this ? data.b : data.a
-          // Play collision animation if defined
-          if (this.animations[Animations.collision]) {
-            const animation = this.playAnimation(Animations.collision)
-            if (animation instanceof AnimatedSprite) {
-              animation.onComplete = () => {
-                this.playAnimation(Animations.idle)
-              }
-            } else {
-              setTimeout(() => {
-                this.playAnimation(Animations.idle)
-              }, this.staticAnimationDelay)
-            }
-          }
-          fn(other)
-        })
+        on(event, fn)
       )
-    } else {
-      super.on(event, fn, context)
     }
     return this
   }
@@ -224,5 +251,37 @@ export class Entity extends Container {
     removeFromAllLayers(this)
     this.garbage.forEach(fn => fn())
     super.destroy()
+  }
+
+  use<T>(plugin: Plugin<T>, settings?: T): this {
+    if (this.plugins.has(plugin.name)) {
+      console.warn(`Plugin ${plugin.name} is already initialized on this entity`)
+      return this
+    }
+
+    // Store plugin settings
+    if (settings) {
+      this.pluginSettings.set(plugin.name, settings)
+    }
+
+    // Initialize plugin with settings
+    if (plugin.init) {
+      plugin.init(this, settings ?? this.pluginSettings.get(plugin.name) as T)
+    }
+
+    if (plugin.update) {
+      this.updaters.add(() => plugin.update?.(this))
+    }
+
+    if (plugin.events) {
+      // Register all plugin events
+      for (const [event, handler] of Object.entries(plugin.events)) {
+        if (!handler) continue
+        this.on(event, handler.bind(this, this))
+      }
+    }
+
+    this.plugins.add(plugin.name)
+    return this
   }
 }
