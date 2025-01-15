@@ -1,0 +1,7 @@
+html,
+body {
+  width: 100dvw;
+  height: 100dvh;
+  display: flex;
+  margin: 0;
+}
