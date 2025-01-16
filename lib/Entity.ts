@@ -5,7 +5,7 @@ import { getState } from './game'
 import { Events, on, emit, isPixiEvent, type EventData } from './events'
 import { Animations } from './animations'
 import { Plugin } from './Plugin'
-import type { MovementSettings } from './Actor/movement'
+import type { MovementSettings } from './plugs/movement'
 
 // Default physics values optimized for top-down 2D game
 const DEFAULT_PHYSICS: IBodyDefinition = {
@@ -54,6 +54,13 @@ export class Entity extends Container {
       [Animations.idle]: textureNameOrNames
     })
 
+    // Initialize plugin settings from options
+    if (options.plugins) {
+      for (const [key, value] of Object.entries(options.plugins)) {
+        this.setPluginSettings(key, value)
+      }
+    }
+
     // Listen for basic animation events
     this.on(Events.animation, (event: Event, data: EventData[Events.animation]) => {
       this.playAnimation(data.type)
@@ -95,11 +102,11 @@ export class Entity extends Container {
     // Setup collision animation handling
     this.on(Events.collision, () => {
       // Emit collision animation event
-      emit<Events.animation>(Events.animation, { type: Animations.collision })
+      emit(Events.animation, { type: Animations.collision })
     })
 
     // Start with idle animation
-    emit<Events.animation>(Events.animation, { type: Animations.idle })
+    emit(Events.animation, { type: Animations.idle })
   }
 
   get sprite(): Sprite | AnimatedSprite {
@@ -226,13 +233,15 @@ export class Entity extends Container {
       super.on(event, fn, context)
     } else if (event in Events) {
       // Handle system events
-      this.gc(on(event, fn))
+      const typedEvent = event as Events
+      const typedFn = fn as (event: Event, data: EventData[typeof typedEvent]) => void
+      this.gc(on(typedEvent, typedFn))
     } else if (typeof event === 'string') {
       // Handle layer collision listening
-      this.gc(
-        registerLayerListener(this, event),
-        on(event, fn)
-      )
+      this.gc(registerLayerListener(this, event))
+      // Layer events are collision events with the same shape as CollisionEvent
+      const collisionFn = (e: Event, data: { a: Entity, b: Entity }) => fn(e, data)
+      this.gc(on(Events.collision, collisionFn))
     }
     return this
   }
@@ -283,5 +292,13 @@ export class Entity extends Container {
 
     this.plugins.add(plugin.name)
     return this
+  }
+
+  getPluginSettings<T>(pluginName: string): T | undefined {
+    return this.pluginSettings.get(pluginName) as T | undefined
+  }
+
+  setPluginSettings<T>(pluginName: string, settings: T): void {
+    this.pluginSettings.set(pluginName, settings)
   }
 }

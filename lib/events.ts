@@ -57,14 +57,16 @@ export type EventData = {
 }
 
 // Type for any event name (known or custom)
-export type EventName = Events
+export type EventName = Events | string
 
 // Type for event data based on event name
 export type EventDataType<E extends EventName> = E extends keyof EventData
   ? EventData[E] extends void
     ? undefined
     : EventData[E]
-  : never
+  : E extends string
+    ? CollisionEvent
+    : never
 
 // PIXI events that should use PIXI's event system
 const PIXI_EVENTS = new Set([
@@ -90,19 +92,33 @@ export type EventHandler<E extends EventName> = (
   data: EventDataType<E>
 ) => void
 
-export const emit = <E extends EventName>(event: E, data: EventDataType<E>): void => {
-  const customEvent = new CustomEvent(event, { detail: data })
-  window.dispatchEvent(customEvent)
+export const emit = <E extends EventName>(
+  event: E,
+  data?: EventDataType<E> extends undefined ? never : EventDataType<E>
+): void => {
+  const eventName = event.toString()
+  if (isPixiEvent(eventName)) {
+    pixiEmitter.emit(eventName, data)
+  } else {
+    const customEvent = new CustomEvent(eventName, { detail: data })
+    window.dispatchEvent(customEvent)
+  }
 }
 
 export const on = <E extends EventName>(
   event: E,
   handler: EventHandler<E>
 ): () => void => {
+  const eventName = event.toString()
+  if (isPixiEvent(eventName)) {
+    pixiEmitter.on(eventName, handler)
+    return () => pixiEmitter.off(eventName, handler)
+  }
+
   const wrappedHandler = (e: Event) => {
     const customEvent = e as CustomEvent<EventDataType<E>>
     handler(customEvent, customEvent.detail)
   }
-  window.addEventListener(event, wrappedHandler)
-  return () => window.removeEventListener(event, wrappedHandler)
+  window.addEventListener(eventName, wrappedHandler)
+  return () => window.removeEventListener(eventName, wrappedHandler)
 }
