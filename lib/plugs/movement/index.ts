@@ -1,7 +1,12 @@
 // Core movement functionality
 export * from './move'
 export * from './animate'
-export * from './types'
 
 // Top-down movement plugins
 export * from './top-down'
+
+export * from './settings'
+
+export enum Movement {
+  topDown = 'top-down',
+}

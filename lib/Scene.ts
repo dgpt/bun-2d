@@ -1,6 +1,6 @@
 import { Container } from 'pixi.js'
 import { Events, emit } from './events'
-import { getState } from './game'
+import { getState } from './Game'
 
 export enum Scenes {
   main = 'main',

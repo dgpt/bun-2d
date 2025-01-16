@@ -1,16 +1,20 @@
 import type { Events } from './events'
 import type { Entity } from './Entity'
 
+export interface PluginSettings {
+  [key: string]: unknown
+}
+
 export type PluginEvents = {
   [K in Events | string]?: (entity: Entity, ...args: any[]) => void
 }
 
-export class Plugin<Settings = void> {
+export type PluginInit<T> = (entity: Entity, settings?: T) => void
+export type PluginUpdate = (entity: Entity) => void
+
+export class Plugin<Settings = unknown> {
   public readonly name: string
   public readonly events?: PluginEvents
-  public readonly update?: (entity: Entity) => void
-  public readonly init?: (entity: Entity, settings?: Settings) => void
-  protected settings?: Settings
 
   constructor(name: string, {
     events,
@@ -18,12 +22,23 @@ export class Plugin<Settings = void> {
     init
   }: {
     events?: PluginEvents
-    update?: (entity: Entity) => void
-    init?: (entity: Entity, settings?: Settings) => void
+      update?: PluginUpdate
+      init?: PluginInit<Settings>
   }) {
     this.name = name
     this.events = events
-    this.update = update
-    this.init = init
+    this.update = update?.bind(this)
+    if (init) {
+      this.init = init.bind(this)
+    }
+  }
+
+  init?(entity: Entity, settings?: Settings): void
+
+  update?(entity: Entity): void
+
+  // Helper to get plugin settings from entity
+  protected getSettings(entity: Entity): Settings | undefined {
+    return entity.plugins.get(this.name) as Settings | undefined
   }
 }

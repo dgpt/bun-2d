@@ -1,4 +1,4 @@
-import { init, loadAssets, addChild } from '../lib/game'
+import { Game, addEntity } from '../lib/Game'
 import { createDialog } from '../lib/Dialog'
 import Scene, { Scenes } from '../lib/Scene'
 import createPlayer from './player'
@@ -8,21 +8,30 @@ const mainScene = new Scene(Scenes.main, async (container) => {
   const player = createPlayer()
   // Setup player
   player.set({ position: { x: 100, y: 100 } })
-  addChild(player)
+  addEntity(player)
 
   const rupert = createRupert()
   // Setup Rupert
   rupert.set({ position: { x: 300, y: 300 } })
-  addChild(rupert)
+  addEntity(rupert)
 })
 
 export const startGame = async () => {
-  await init()
-  await loadAssets({
-    spritesheets: [
-      '/spritesheets/c01.json'
-    ]
+  // Initialize game
+  const game = new Game({
+    backgroundColor: "#a0a0a0",
+    antialias: true
   })
+
+  // Load assets
+  await game.load({
+    spritesheets: ['/spritesheets/c01.json']
+  })
+
+  // Start game loop
+  game.start()
+
+  // Initialize scene
   await mainScene.init()
 }
 

@@ -1,13 +1,3 @@
-// Basic animation types
-export enum BaseAnimations {
-  moving = 'moving',
-  stopping = 'stopping',
-  stopped = 'stopped',
-  idle = 'idle',
-  accelerating = 'accelerating',
-  collision = 'collision'
-}
-
 // Extended animation types for movement plugins
 export enum Animations {
   // Basic animations

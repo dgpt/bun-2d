@@ -1,42 +1,38 @@
 import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Container, Texture, ObservablePoint } from 'pixi.js'
 import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
-import { Layers, addToLayer, removeFromAllLayers, registerLayerListener } from './layers'
-import { getState } from './game'
+import Layers, { type Layer } from './Layers'
+import { getState } from './Game'
 import { Events, on, emit, isPixiEvent, type EventData } from './events'
 import { Animations } from './animations'
-import { Plugin } from './Plugin'
-import type { MovementSettings } from './plugs/movement'
+import { Plugin, PluginSettings } from './Plugin'
 
 // Default physics values optimized for top-down 2D game
 const DEFAULT_PHYSICS: IBodyDefinition = {
   isStatic: false,
   restitution: 0.2,    // Slight bounce for object interactions
-  friction: 0.8,       // High friction for heavier objects
-  frictionAir: 0.3,    // Moderate air resistance for weight
-  frictionStatic: 0.7, // High static friction for heavy objects
+  friction: 0.1,       // Lower friction for smoother movement
+  frictionAir: 0.1,    // Lower air resistance for smoother movement
+  frictionStatic: 0.2, // Lower static friction for smoother movement
   density: 0.01,       // Higher density for weight
   inertia: Infinity,   // Prevent rotation
   isSensor: false      // Solid by default
 }
-
-// Plugin settings type federation
-export interface EntityPluginSettings {}
 
 export type EntityOptions = {
   physics?: Partial<IBodyDefinition>
   static?: boolean
   velocity?: IPointData
   position?: IPointData
-  plugins?: Partial<EntityPluginSettings>
+  plugins?: Partial<PluginSettings>
 }
 
 export class Entity extends Container {
   public body: Matter.Body
-  public layers = new Set<string>([Layers.entities])
+  public layers = new Set<Layer>()
   public animationSpeed = 0.1
   public staticAnimationDelay = 800
-  public readonly plugins = new Set<string>()
-  private pluginSettings = new Map<string, unknown>()
+  public readonly plugins = new Map<string, unknown>()
+  public readonly id = crypto.randomUUID()
 
   private garbage: Array<() => void> = []
   private animations: Record<string, string | string[]> = {}
@@ -53,13 +49,6 @@ export class Entity extends Container {
     this.animate({
       [Animations.idle]: textureNameOrNames
     })
-
-    // Initialize plugin settings from options
-    if (options.plugins) {
-      for (const [key, value] of Object.entries(options.plugins)) {
-        this.setPluginSettings(key, value)
-      }
-    }
 
     // Listen for basic animation events
     this.on(Events.animation, (event: Event, data: EventData[Events.animation]) => {
@@ -83,16 +72,7 @@ export class Entity extends Container {
     const { engine } = getState()
     World.add(engine.world, this.body)
 
-    // Apply any additional options
-    if (options.position) {
-      this.setPosition(options.position)
-    }
-    if (options.velocity) {
-      this.velocity = options.velocity
-    }
-    if (options.static !== undefined) {
-      this.static = options.static
-    }
+    this.set(options)
 
     // Setup cleanup
     this.on(Events.cleanup, () => {
@@ -104,9 +84,6 @@ export class Entity extends Container {
       // Emit collision animation event
       emit(Events.animation, { type: Animations.collision })
     })
-
-    // Start with idle animation
-    emit(Events.animation, { type: Animations.idle })
   }
 
   get sprite(): Sprite | AnimatedSprite {
@@ -130,7 +107,14 @@ export class Entity extends Container {
   }
 
   set static(value: boolean) {
-    Body.setStatic(this.body, value)
+    // Only update if the value is actually changing
+    if (this.body.isStatic !== value) {
+      Body.setStatic(this.body, value)
+    }
+  }
+
+  get static(): boolean {
+    return this.body.isStatic
   }
 
   setPosition(value: IPointData): void {
@@ -207,6 +191,13 @@ export class Entity extends Container {
     if (options.static !== undefined) {
       this.static = options.static
     }
+
+    // Store plugin settings if provided
+    if (options.plugins) {
+      for (const [key, value] of Object.entries(options.plugins)) {
+        this.plugins.set(key, value as Plugin<PluginSettings>)
+      }
+    }
   }
 
   applyForce({ x, y }: IPointData): void {
@@ -218,7 +209,7 @@ export class Entity extends Container {
     super.position.set(x, y)
     this.rotation = this.body.angle
 
-    // Run all plugin updaters
+    // Run all plugin updaters regardless of static state
     for (const update of this.updaters) {
       update()
     }
@@ -226,22 +217,31 @@ export class Entity extends Container {
 
   on<T extends keyof DisplayObjectEvents>(event: T, fn: (...args: [Extract<T, keyof DisplayObjectEvents>]) => void, context?: any): this;
   on<E extends Events>(event: E, fn: (event: Event, data: EventData[E]) => void): this;
-  on(event: string, fn: (event: Event, data: { a: Entity, b: Entity }) => void): this;
+  on(event: Layer, fn: (event: Event, data: Entity) => void): this;
   on(event: any, fn: (...args: any[]) => void, context?: any): this {
     if (isPixiEvent(event)) {
-      // Handle PIXI events
+      // For PIXI events, register with PIXI and track for cleanup
       super.on(event, fn, context)
-    } else if (event in Events) {
-      // Handle system events
-      const typedEvent = event as Events
-      const typedFn = fn as (event: Event, data: EventData[typeof typedEvent]) => void
-      this.gc(on(typedEvent, typedFn))
-    } else if (typeof event === 'string') {
+      this.gc(() => super.off(event, fn, context))
+    } else if (event in Object.values(Events)) {
+      this.gc(on(event, fn))
+    } else if (event in Layers) {
       // Handle layer collision listening
-      this.gc(registerLayerListener(this, event))
+      this.gc(
+        Layers[event as Layer].listen(this)
+      )
+
       // Layer events are collision events with the same shape as CollisionEvent
-      const collisionFn = (e: Event, data: { a: Entity, b: Entity }) => fn(e, data)
-      this.gc(on(Events.collision, collisionFn))
+      const collisionFn = (e: Event, data: { a: Entity, b: Entity }) => {
+        // Only call handler if this entity is involved in the collision
+        const isA = data?.a === this
+        const isB = data?.b === this
+        if (isA || isB) {
+          // Pass the other entity as data
+          fn(e, isA ? data.b : data.a)
+        }
+      }
+      this.gc(on(event, collisionFn))
     }
     return this
   }
@@ -257,25 +257,30 @@ export class Entity extends Container {
   destroy(): void {
     const { engine } = getState()
     World.remove(engine.world, this.body)
-    removeFromAllLayers(this)
+
+    // Remove from all layers
+    this.layers.forEach(layer => {
+      Layers[layer].entities.remove(this)
+      Layers[layer].listeners.remove(this)
+    })
+
     this.garbage.forEach(fn => fn())
     super.destroy()
   }
 
-  use<T>(plugin: Plugin<T>, settings?: T): this {
+  use(plugin: Plugin, settings?: unknown): this {
     if (this.plugins.has(plugin.name)) {
-      console.warn(`Plugin ${plugin.name} is already initialized on this entity`)
       return this
     }
 
-    // Store plugin settings
+    // Store settings under plugin name
     if (settings) {
-      this.pluginSettings.set(plugin.name, settings)
+      this.plugins.set(plugin.name, settings)
     }
 
     // Initialize plugin with settings
     if (plugin.init) {
-      plugin.init(this, settings ?? this.pluginSettings.get(plugin.name) as T)
+      plugin.init(this, settings)
     }
 
     if (plugin.update) {
@@ -286,19 +291,10 @@ export class Entity extends Container {
       // Register all plugin events
       for (const [event, handler] of Object.entries(plugin.events)) {
         if (!handler) continue
-        this.on(event, handler.bind(this, this))
+        this.on(event, handler.bind(plugin, this))
       }
     }
 
-    this.plugins.add(plugin.name)
     return this
-  }
-
-  getPluginSettings<T>(pluginName: string): T | undefined {
-    return this.pluginSettings.get(pluginName) as T | undefined
-  }
-
-  setPluginSettings<T>(pluginName: string, settings: T): void {
-    this.pluginSettings.set(pluginName, settings)
   }
 }
