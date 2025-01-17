@@ -3,7 +3,6 @@ import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
 import Layers, { type Layer } from './Layers'
 import { getState } from './Game'
 import { Events, on, emit, isPixiEvent, type EventData } from './events'
-import { Animations } from './animations'
 import { Plugin, PluginSettings } from './Plugin'
 
 // Default physics values optimized for top-down 2D game
@@ -31,6 +30,7 @@ export class Entity extends Container {
   public layers = new Set<Layer>()
   public animationSpeed = 0.1
   public staticAnimationDelay = 800
+  public name = 'Entity'
   public readonly plugins = new Map<string, unknown>()
   public readonly id = crypto.randomUUID()
 
@@ -47,7 +47,7 @@ export class Entity extends Container {
 
     // Set initial texture as idle animation
     this.animate({
-      [Animations.idle]: textureNameOrNames
+      idle: textureNameOrNames
     })
 
     // Listen for basic animation events
@@ -82,7 +82,7 @@ export class Entity extends Container {
     // Setup collision animation handling
     this.on(Events.collision, () => {
       // Emit collision animation event
-      emit(Events.animation, { type: Animations.collision })
+      emit(Events.animation, { type: 'collision' })
     })
   }
 
@@ -146,9 +146,9 @@ export class Entity extends Container {
     return this.currentSprite
   }
 
-  animate(animation: Animations, ...textureNames: string[]): void;
+  animate(animation: string, ...textureNames: string[]): void;
   animate(map: Record<string, string | string[]>): void;
-  animate(animationOrMap: Animations | Record<string, string | string[]>, ...textureNames: string[]): void {
+  animate(animationOrMap: string | Record<string, string | string[]>, ...textureNames: string[]): void {
     if (typeof animationOrMap === 'object') {
       // Merge animation map directly
       this.animations = { ...this.animations, ...animationOrMap }
@@ -226,7 +226,7 @@ export class Entity extends Container {
     } else if (event in Object.values(Events)) {
       this.gc(on(event, fn))
     } else if (event in Layers) {
-      // Handle layer collision listening
+      // Add this entity as a listener for the layer
       this.gc(
         Layers[event as Layer].listen(this)
       )

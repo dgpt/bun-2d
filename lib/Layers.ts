@@ -1,4 +1,5 @@
 import type { Entity } from './Entity'
+import { Events, emit } from './events'
 
 // Base layer interface that can be extended by users
 export interface LayerTypes {
@@ -31,6 +32,7 @@ type LayerInternals = {
 const layers: Partial<Record<Layer, LayerInternals>> = {}
 
 const findIndexByEntity = (arr: Entity[], entity: Entity) => arr.findIndex(e => e.id === entity.id)
+
 const getLayer = (layer: Layer): LayerOperations | null => {
   const layerData = layers[layer]
   if (!layerData) {
@@ -39,17 +41,26 @@ const getLayer = (layer: Layer): LayerOperations | null => {
 
   const createEntitySet = (arr: Entity[]): Entities => ({
     add: (entity: Entity) => {
-      if (!arr.includes(entity)) {
+      const idx = findIndexByEntity(arr, entity)
+      if (idx === -1) {
         arr.push(entity)
+        if (!entity.layers.has(layer)) {
+          entity.layers.add(layer)
+          emit(Events.entityLayerAdded, { entity, layer })
+        }
       }
     },
     remove: (entity: Entity) => {
-      const idx = arr.indexOf(entity)
+      const idx = findIndexByEntity(arr, entity)
       if (idx !== -1) {
         arr.splice(idx, 1)
+        if (entity.layers.has(layer)) {
+          entity.layers.delete(layer)
+          emit(Events.entityLayerRemoved, { entity, layer })
+        }
       }
     },
-    has: (entity: Entity) => arr.includes(entity),
+    has: (entity: Entity) => findIndexByEntity(arr, entity) !== -1,
     get length() {
       return arr.length
     },
@@ -62,7 +73,8 @@ const getLayer = (layer: Layer): LayerOperations | null => {
     entities: createEntitySet(layerData.entities),
     listeners: createEntitySet(layerData.listeners),
     listen: (entity: Entity) => {
-      if (findIndexByEntity(layerData.listeners, entity) === -1) {
+      const idx = findIndexByEntity(layerData.listeners, entity)
+      if (idx === -1) {
         layerData.listeners.push(entity)
       }
       return () => {
@@ -111,6 +123,7 @@ const Layers = new Proxy(BaseLayers, {
   }
 }) as LayersType
 
+// Initialize the default entities layer
 new Layers('entities')
 
 export default Layers

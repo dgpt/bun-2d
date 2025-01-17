@@ -1,24 +1,33 @@
-import { Events, emit } from './events'
+import { Events, on, emit } from './events'
 import Layers from './Layers'
 import type { Entity } from './Entity'
 
 export const initCollisions = (): void => {
-  // Listen for collision events
-  window.addEventListener('collisionstart', (e: Event) => {
-    const { pairs } = (e as CustomEvent).detail
-
+  // Listen for Matter.js collision events through our event system
+  on(Events.collisionStart, (event) => {
     // Handle each collision pair
-    pairs.forEach((pair: { bodyA: { plugin: { entity: Entity } }, bodyB: { plugin: { entity: Entity } } }) => {
-      const a = pair.bodyA.plugin.entity
-      const b = pair.bodyB.plugin.entity
+    event.pairs.forEach((pair) => {
+      // Extract entities from Matter.js bodies
+      const a = pair.bodyA.plugin?.entity as Entity | undefined
+      const b = pair.bodyB.plugin?.entity as Entity | undefined
 
-      // Emit collision event for each entity
+      if (!a || !b) return
+
+      // Emit general collision event
       emit(Events.collision, { a, b })
 
-      // Emit layer-specific collision events
+      // Emit layer-specific collision events for each layer of each entity
       a.layers.forEach(layer => {
-        if (b.layers.has(layer)) {
-          emit(layer, { a, b })
+        // If b is listening to this layer, emit the event
+        if (Layers[layer]?.listeners.has(b)) {
+          b.emit(layer, a)
+        }
+      })
+
+      b.layers.forEach(layer => {
+        // If a is listening to this layer, emit the event
+        if (Layers[layer]?.listeners.has(a)) {
+          a.emit(layer, b)
         }
       })
     })

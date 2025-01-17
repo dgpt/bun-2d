@@ -1,17 +1,17 @@
 import Layers, { type LayerTypes } from 'lib/Layers'
 
-// Extend the base LayerTypes with game-specific layers
-declare module 'lib/Layers' {
-  interface LayerTypes {
-    player: 'player'
-    npc: 'npc'
-  }
-}
-
 // Define game-specific layers
 export enum GameLayers {
   player = 'player',
   npc = 'npc'
+}
+
+// Extend the base LayerTypes with game-specific layers
+declare module 'lib/Layers' {
+  interface LayerTypes {
+    player: GameLayers.player,
+    npc: GameLayers.npc
+  }
 }
 
 // Register game layers

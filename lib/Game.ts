@@ -50,6 +50,11 @@ export class Game {
     })
     document.body.appendChild(app.view as HTMLCanvasElement)
 
+    // Enable pointer events on the stage
+    app.stage.eventMode = 'static'
+    app.stage.hitArea = app.screen
+    app.stage.interactiveChildren = true
+
     // Create physics engine
     const engine = Engine.create({
       gravity: { x: 0, y: 0 }

@@ -11,6 +11,7 @@ const DEFAULT_OPTIONS = {
 }
 
 export class Actor extends Entity {
+  public name = 'Actor'
   constructor(textureNameOrNames: string | string[], options: ActorOptions = {}) {
     // Pass through all options including plugin settings
     super(textureNameOrNames, options)
