@@ -1,6 +1,8 @@
 # pixi-matters
-
 A lightweight, modular 2D game engine for PixiJS and Matter.js.
+
+### WORK IN PROGRESS!
+This is under active development and is not ready for use... yet
 
 ## Features
 
@@ -473,7 +475,3 @@ function recycleProjectile(projectile: Entity) {
   projectilePool.add(projectile)
 }
 ```
-
-## License
-
-MIT License - see LICENSE file for details
