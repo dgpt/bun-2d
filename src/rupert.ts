@@ -1,16 +1,30 @@
 import { Entity } from 'lib/Entity'
-import Events, { emit, on } from 'lib/events'
+import { emit, on } from 'lib/events'
 import { openDialog } from 'lib/Dialog'
 import Layers from 'lib/Layers'
 import Animations from 'lib/animations'
 
-const DIALOG_TEXT = "Hello! I'm Rupert. Press Space or Enter to continue."
 declare global {
-  interface GameEvents {
+  // Extend the Events namespace with game-specific events
+  // Add event data types
+  interface EventData {
     customEvent: void
     doAThing: { value: number }
   }
+
+  // Add event const values
+  namespace Events {
+    export const customEvent = 'customEvent'
+    export const doAThing = 'doAThing'
+  }
+
+  namespace Layers {
+    export const npc = 'npc'
+    export const player = 'player'
+  }
 }
+
+const DIALOG_TEXT = "Hello! I'm Rupert. Press Space or Enter to continue."
 
 export function createRupert(): Entity {
   const rupert = new Entity('c01-0', {
@@ -71,6 +85,9 @@ export function createRupert(): Entity {
   })
 
   rupert.on(Events.doAThing, (event, data) => {
+    console.log('do a thing', data.value)
+  })
+  on(Events.doAThing, (event, data) => {
     console.log('do a thing', data.value)
   })
 

@@ -9,6 +9,3 @@ declare enum GameAnimations {
   jump = 'jump',
   kick = 'kick'
 }
-
-// Extend the base IEvents interface with game-specific events
-

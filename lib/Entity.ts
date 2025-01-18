@@ -27,7 +27,7 @@ export type EntityOptions = {
 
 export class Entity extends Container {
   public body: Matter.Body
-  public layers = new Set<Layer>()
+  public layers: Layer[] = []
   public animationSpeed = 0.1
   public staticAnimationDelay = 800
   public name = 'Entity'
@@ -208,8 +208,8 @@ export class Entity extends Container {
   }
 
   on<T extends keyof DisplayObjectEvents>(event: T, fn: (...args: [Extract<T, keyof DisplayObjectEvents>]) => void, context?: any): this;
-  on<E extends Event>(event: E, fn: (event: E, data: E extends keyof EventData ? EventData[E] : unknown) => void): this;
-  on(event: Layer, fn: (event: Event, data: Entity) => void): this;
+  on<E extends keyof EventData>(event: E, fn: (event: CustomEvent<EventData[E]>, data: EventData[E]) => void): this;
+  on(event: Layer, fn: (event: CustomEvent<Entity>, data: Entity) => void): this;
   on(event: any, fn: (...args: any[]) => void, context?: any): this {
     if (isPixiEvent(event)) {
       // For PIXI events, register with PIXI and track for cleanup
@@ -219,21 +219,9 @@ export class Entity extends Container {
       this.gc(on(event, fn))
     } else if (event?.name && Object.values(Layers).includes(event)) {
       // Add this entity as a listener for the layer
-      const layer = Layers[event as Layer] as unknown as LayerOperations
-      if (layer && typeof layer.listen === 'function') {
-        this.gc(layer.listen(this))
-
-        // Layer events are collision events with the same shape as CollisionEvent
-        const collisionFn = (e: Event, data: EventData[SystemEvents.Collision]) => {
-          // Only call handler if this entity is involved in the collision
-          const isA = data?.a === this
-          const isB = data?.b === this
-          if (isA || isB) {
-            // Pass the other entity as data
-            fn(e, isA ? data.b : data.a)
-          }
-        }
-        this.gc(on(event, collisionFn))
+      const layer = Layers.get(event as Layer)
+      if (layer && Layers.has(event as Layer, this)) {
+        Layers.listen(event, this)
       }
     }
     return this
@@ -250,15 +238,6 @@ export class Entity extends Container {
   destroy(): void {
     const { engine } = getState()
     World.remove(engine.world, this.body)
-
-    // Remove from all layers
-    for (const layer of this.layers) {
-      const layerOps = Layers[layer] as unknown as LayerOperations
-      if (layerOps) {
-        layerOps.entities.remove(this)
-        layerOps.listeners.remove(this)
-      }
-    }
 
     this.garbage.forEach(fn => fn())
     super.destroy()

@@ -1,122 +1,79 @@
 import type { Entity } from './Entity'
-import { emit } from './events'
-import { Events } from './events'
+import { on, emit } from './events'
 
-// System-defined layers enum
-export enum SystemLayers {
-  Entities = 'entities'
-}
-
-// Type that combines system and user-defined layers
-export type Layer = SystemLayers | GameLayers
-
-// Layer operations interface
-export interface LayerOps {
-  add: (entity: Entity) => void
-  remove: (entity: Entity) => void
-  has: (entity: Entity) => boolean
-  length: number
-  name: string
-  [Symbol.iterator](): Iterator<Entity>
-}
-
-type LayerOperations = {
-  entities: LayerOps
-  listeners: LayerOps
-  listen: (entity: Entity) => () => void
-}
-
-type LayerInternals = {
-  entities: Entity[]
-  listeners: Entity[]
-}
-
-// Internal storage
-const layers = new Map<Layer, LayerInternals>()
-
-const findIndexByEntity = (arr: Entity[], entity: Entity) => arr.findIndex(e => e.id === entity.id)
-
-const getLayer = (layerName: Layer): LayerOperations | null => {
-  const layerData = layers.get(layerName)
-  if (!layerData) {
-    layers.set(layerName, {
-      entities: [],
-      listeners: []
-    })
-    return getLayer(layerName)
+// Layer type definitions
+declare global {
+  // Base layers namespace that acts like an enum
+  enum Layers {
+    // Core game layers
+    entities = 'entities'
   }
 
-  const createEntitySet = (arr: Entity[]): LayerOps => ({
-    name: layerName,
-    add: (entity: Entity) => {
-      const idx = findIndexByEntity(arr, entity)
-      if (idx === -1) {
-        arr.push(entity)
-        if (!entity.layers.has(layerName)) {
-          entity.layers.add(layerName)
-          emit(Events.entityLayerAdded, { entity, layer: layerName })
-        }
-      }
-    },
-    remove: (entity: Entity) => {
-      const idx = findIndexByEntity(arr, entity)
-      if (idx !== -1) {
-        arr.splice(idx, 1)
-        if (entity.layers.has(layerName)) {
-          entity.layers.delete(layerName)
-          emit(Events.entityLayerRemoved, { entity, layer: layerName })
-        }
-      }
-    },
-    has: (entity: Entity) => findIndexByEntity(arr, entity) !== -1,
-    get length() {
-      return arr.length
-    },
-    [Symbol.iterator]() {
-      return arr[Symbol.iterator]()
-    }
-  })
-
-  return {
-    entities: createEntitySet(layerData.entities),
-    listeners: createEntitySet(layerData.listeners),
-    listen: (entity: Entity) => {
-      const idx = findIndexByEntity(layerData.listeners, entity)
-      if (idx === -1) {
-        layerData.listeners.push(entity)
-      }
-      return () => {
-        const idx = findIndexByEntity(layerData.listeners, entity)
-        if (idx !== -1) {
-          layerData.listeners.splice(idx, 1)
-        }
-      }
-    }
+  namespace Layers {
+    // Layer management functions
+    export function add(layer: Layers, entity: Entity): void
+    export function remove(layer: Layers, entity: Entity): void
+    export function has(layer: Layers, entity: Entity): boolean
+    export function get(layer: Layers): Entity[]
+    export function listen(layer: Layers, entity: Entity): void
   }
 }
 
-// Type for the Layers proxy
-type LayersType = {
-  [K in SystemLayers]: K
-} & {
-  [K in GameLayers]: K
-} & LayerOperations
+// Internal storage for layer entities
+const layerEntities = new Map<Layers, Entity[]>()
 
-// Create the proxy with both instance and constructor functionality
-const Layers = new Proxy({} as LayersType, {
-  get(target: LayersType, prop: string | symbol) {
-    return getLayer(prop as Layer)
+// Initialize core layers
+Object.keys(Layers).forEach(layer => {
+  if (typeof Layers[layer as keyof typeof Layers] === 'string') {
+    layerEntities.set(layer as Layers, [])
   }
 })
 
-// Initialize system layers
-Object.values(SystemLayers).forEach(layer => {
-  if (!layers.has(layer)) {
-    layers.set(layer, {
-      entities: [],
-      listeners: []
-    })
+// Layer management implementation
+Layers.add = (layer: Layers, entity: Entity) => {
+  const entities = layerEntities.get(layer)
+  if (!entities) {
+    layerEntities.set(layer, [entity])
+  } else {
+    entities.push(entity)
   }
-})
+}
 
+Layers.remove = (layer: Layers, entity: Entity) => {
+  const entities = layerEntities.get(layer)
+  entities?.splice(entities.indexOf(entity), 1)
+}
+
+Layers.has = (layer: Layers, entity: Entity): boolean => {
+  return layerEntities.get(layer)?.includes(entity) ?? false
+}
+
+Layers.get = (layer: Layers): Entity[] => {
+  return layerEntities.get(layer) ?? []
+}
+
+Layers.listen = (layer: Layers, entity: Entity): void => {
+  // Listen for Matter.js collision events through our event system
+  entity.gc(
+    on(Events.collisionStart, (_, { pairs }) => {
+      // Handle each collision pair
+      pairs.forEach((pair) => {
+        // Extract entities from Matter.js bodies
+        const a = pair.bodyA.plugin?.entity as Entity | undefined
+        const b = pair.bodyB.plugin?.entity as Entity | undefined
+
+        if (!a || !b) return
+        if (a.id !== entity.id && b.id !== entity.id) return
+
+        const other = a.id === entity.id ? b : a
+        const targetLayer = a.layers.find(l => l === layer)
+
+        if (!targetLayer) return
+        other.emit(targetLayer, entity)
+      })
+    }),
+  )
+}
+
+export { Layers }
 export default Layers
