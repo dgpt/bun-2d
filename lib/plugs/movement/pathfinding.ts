@@ -1,21 +1,17 @@
 import { Grid, BiBreadthFirstFinder, DiagonalMovement } from 'pathfinding'
-import type { Entity } from 'lib/Entity'
+import { Entity } from 'lib/Entity'
 import type { IPointData } from 'pixi.js'
 import { getState } from 'lib/Game'
-import { Events, on, type EventData, type CollisionEvent } from 'lib/events'
+import { Events, on, type EventData } from 'lib/events'
 import Layers from 'lib/Layers'
 import { Body } from 'matter-js'
+import type { Target, PathData } from './types'
 
 // Grid size for pathfinding (smaller = more precise but slower)
 const GRID_CELL_SIZE = 32
 
 // Store active paths for entities
-const activePaths = new WeakMap<Entity, {
-  path: IPointData[]
-  target?: Entity
-  destination: IPointData
-  isRecalculating?: boolean
-}>()
+const activePaths = new WeakMap<Entity, PathData>()
 
 // Track which entities have collision handlers
 const collisionHandlers = new WeakSet<Entity>()
@@ -51,11 +47,7 @@ const setupCollisionHandler = (entity: Entity) => {
 
         if (distSq > GRID_CELL_SIZE * GRID_CELL_SIZE) {
           // Try to find a path from our current position
-          const newPath = findPath(
-            entity,
-            pathData.destination,
-            pathData.target
-          )
+          const newPath = findPath(entity, pathData.destination, pathData.target)
 
           // If no path found, clear the path
           if (!newPath || newPath.length === 0) {
@@ -81,7 +73,7 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
   }
 
   // If we have a target entity, update the path end point
-  if (pathData.target) {
+  if (pathData.target instanceof Entity) {
     const lastPoint = pathData.path[pathData.path.length - 1]
     if (
       Math.abs(pathData.target.x - lastPoint.x) > GRID_CELL_SIZE ||
@@ -129,8 +121,16 @@ const clampToGrid = (value: number, max: number) => {
   return Math.max(0, Math.min(max - 1, Math.floor(value)))
 }
 
-export const findPath = (entity: Entity, target: IPointData, targetEntity?: Entity) => {
+export const findPath = (entity: Entity, destination: IPointData, target?: Target) => {
   const { app } = getState()
+
+  // Clear any existing path before starting a new one
+  clearPath(entity)
+
+  // Skip pathfinding if target is at current position (used for stopping)
+  if (Math.abs(destination.x - entity.x) < 5 && Math.abs(destination.y - entity.y) < 5) {
+    return []
+  }
 
   // Ensure collision handler is setup
   setupCollisionHandler(entity)
@@ -142,11 +142,9 @@ export const findPath = (entity: Entity, target: IPointData, targetEntity?: Enti
 
   // Mark static entities and other obstacles
   for (const other of Layers.entities.entities) {
-    if (other === entity) continue // Skip self
-    if (other === targetEntity) continue // Skip target entity
-    if (other.static) {
-      markEntityOnGrid(grid, other)
-    }
+    if (other.id === entity.id) continue // Skip self
+    if (target instanceof Entity && other.id === target.id) continue // Skip target entity
+    markEntityOnGrid(grid, other)
   }
 
   // Create finder instance
@@ -157,8 +155,8 @@ export const findPath = (entity: Entity, target: IPointData, targetEntity?: Enti
   // Convert and clamp positions to grid coordinates
   const startX = clampToGrid(entity.x / GRID_CELL_SIZE, gridWidth)
   const startY = clampToGrid(entity.y / GRID_CELL_SIZE, gridHeight)
-  const endX = clampToGrid(target.x / GRID_CELL_SIZE, gridWidth)
-  const endY = clampToGrid(target.y / GRID_CELL_SIZE, gridHeight)
+  const endX = clampToGrid(destination.x / GRID_CELL_SIZE, gridWidth)
+  const endY = clampToGrid(destination.y / GRID_CELL_SIZE, gridHeight)
 
   // Clone grid before pathfinding to avoid modifying original
   const gridClone = grid.clone()
@@ -166,9 +164,8 @@ export const findPath = (entity: Entity, target: IPointData, targetEntity?: Enti
   // Find path
   const path = finder.findPath(startX, startY, endX, endY, gridClone)
 
-  // If no path found, clear active path and return
+  // If no path found, return empty array
   if (!path || path.length === 0) {
-    clearPath(entity)
     return []
   }
 
@@ -181,8 +178,8 @@ export const findPath = (entity: Entity, target: IPointData, targetEntity?: Enti
   // Store path and destination
   activePaths.set(entity, {
     path: worldPath,
-    target: targetEntity,
-    destination: target,
+    target,
+    destination,
     isRecalculating: false
   })
 

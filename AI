@@ -1,0 +1,4 @@
+this repo is a work in progress gaming library utilizing pixijs and matterjs.
+all code in lib/ should be considered an external library.
+all code in src/ are example game files. we should behave as though these are separate projects.
+it is important to keep this library easy to use and easy to understand, with as little overhead as possible.

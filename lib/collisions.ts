@@ -4,9 +4,9 @@ import type { Entity } from './Entity'
 
 export const initCollisions = (): void => {
   // Listen for Matter.js collision events through our event system
-  on(Events.collisionStart, (event) => {
+  on(Events.collisionStart, (_, { pairs }) => {
     // Handle each collision pair
-    event.pairs.forEach((pair) => {
+    pairs.forEach((pair) => {
       // Extract entities from Matter.js bodies
       const a = pair.bodyA.plugin?.entity as Entity | undefined
       const b = pair.bodyB.plugin?.entity as Entity | undefined

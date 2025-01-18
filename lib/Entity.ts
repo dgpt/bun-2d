@@ -1,10 +1,10 @@
-import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Container, Texture, ObservablePoint } from 'pixi.js'
+import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Container, Texture } from 'pixi.js'
 import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
-import Layers, { type Layer } from './Layers'
+import Layers, { type Layer, type LayerOps } from './Layers'
 import { getState } from './Game'
-import { Events, on, emit, isPixiEvent, type EventData } from './events'
-import { Plugin, PluginSettings } from './Plugin'
-
+import Events, { type SystemEvents, type Event, type EventData, isPixiEvent, on, emit } from './events'
+import { Plugin, type PluginSettings } from './Plugin'
+import Animations, { type Animation } from './animations'
 // Default physics values optimized for top-down 2D game
 const DEFAULT_PHYSICS: IBodyDefinition = {
   isStatic: false,
@@ -35,7 +35,7 @@ export class Entity extends Container {
   public readonly id = crypto.randomUUID()
 
   private garbage: Array<() => void> = []
-  private animations: Record<string, string | string[]> = {}
+  private animations: Record<Animation, string | string[]> | Record<never, never> = {}
   private currentSprite?: Sprite | AnimatedSprite
   private updaters = new Set<() => void>()
 
@@ -52,7 +52,7 @@ export class Entity extends Container {
 
     // Listen for basic animation events
     this.on(Events.animation, (event: Event, data: EventData[Events.animation]) => {
-      this.playAnimation(data.type)
+      this.playAnimation(data.type as Animation)
     })
 
     // Create physics body with sprite dimensions
@@ -80,7 +80,8 @@ export class Entity extends Container {
     })
 
     // Setup collision animation handling
-    this.on(Events.collision, () => {
+    this.on(Layers.entities, (event: Event, data: Entity) => {
+      console.log('collision')
       // Emit collision animation event
       emit(Events.animation, { type: 'collision' })
     })
@@ -146,33 +147,24 @@ export class Entity extends Container {
     return this.currentSprite
   }
 
-  animate(animation: string, ...textureNames: string[]): void;
-  animate(map: Record<string, string | string[]>): void;
-  animate(animationOrMap: string | Record<string, string | string[]>, ...textureNames: string[]): void {
+  animate(animation: Animation, ...textureNames: string[]): void;
+  animate(map: Partial<Record<Animation, string | string[]>>): void;
+  animate(animationOrMap: Animation | Partial<Record<Animation, string | string[]>>, ...textureNames: string[]): void {
     if (typeof animationOrMap === 'object') {
       // Merge animation map directly
       this.animations = { ...this.animations, ...animationOrMap }
     } else {
       // Add single animation with rest parameters as texture names
-      this.animations[animationOrMap] = textureNames
+      this.animations[animationOrMap] = textureNames.length === 1 ? textureNames[0] : textureNames
     }
   }
 
-  playAnimation(name: string | string[]): Sprite | AnimatedSprite | undefined {
+  playAnimation(name: Animation): Sprite | AnimatedSprite | undefined {
     // Check if it's a registered animation
-    if (typeof name === 'string' && name in this.animations) {
+    if (name in this.animations) {
       return this.setSprite(this.animations[name])
     }
-
-    // Check if it's a valid texture or array of textures
-    const { textures } = getState()
-    const isValidTexture = (n: string) => n in textures
-    if (
-      (typeof name === 'string' && isValidTexture(name)) ||
-      (Array.isArray(name) && name.every(isValidTexture))
-    ) {
-      return this.setSprite(name)
-    }
+    return undefined
   }
 
   set(options: EntityOptions): void {
@@ -216,32 +208,33 @@ export class Entity extends Container {
   }
 
   on<T extends keyof DisplayObjectEvents>(event: T, fn: (...args: [Extract<T, keyof DisplayObjectEvents>]) => void, context?: any): this;
-  on<E extends Events>(event: E, fn: (event: Event, data: EventData[E]) => void): this;
+  on<E extends Event>(event: E, fn: (event: E, data: E extends keyof EventData ? EventData[E] : unknown) => void): this;
   on(event: Layer, fn: (event: Event, data: Entity) => void): this;
   on(event: any, fn: (...args: any[]) => void, context?: any): this {
     if (isPixiEvent(event)) {
       // For PIXI events, register with PIXI and track for cleanup
       super.on(event, fn, context)
       this.gc(() => super.off(event, fn, context))
-    } else if (event in Object.values(Events)) {
+    } else if (Object.values(Events).includes(event)) {
       this.gc(on(event, fn))
-    } else if (event in Layers) {
+    } else if (event?.name && Object.values(Layers).includes(event)) {
       // Add this entity as a listener for the layer
-      this.gc(
-        Layers[event as Layer].listen(this)
-      )
+      const layer = Layers[event as Layer] as unknown as LayerOperations
+      if (layer && typeof layer.listen === 'function') {
+        this.gc(layer.listen(this))
 
-      // Layer events are collision events with the same shape as CollisionEvent
-      const collisionFn = (e: Event, data: { a: Entity, b: Entity }) => {
-        // Only call handler if this entity is involved in the collision
-        const isA = data?.a === this
-        const isB = data?.b === this
-        if (isA || isB) {
-          // Pass the other entity as data
-          fn(e, isA ? data.b : data.a)
+        // Layer events are collision events with the same shape as CollisionEvent
+        const collisionFn = (e: Event, data: EventData[SystemEvents.Collision]) => {
+          // Only call handler if this entity is involved in the collision
+          const isA = data?.a === this
+          const isB = data?.b === this
+          if (isA || isB) {
+            // Pass the other entity as data
+            fn(e, isA ? data.b : data.a)
+          }
         }
+        this.gc(on(event, collisionFn))
       }
-      this.gc(on(event, collisionFn))
     }
     return this
   }
@@ -259,10 +252,13 @@ export class Entity extends Container {
     World.remove(engine.world, this.body)
 
     // Remove from all layers
-    this.layers.forEach(layer => {
-      Layers[layer].entities.remove(this)
-      Layers[layer].listeners.remove(this)
-    })
+    for (const layer of this.layers) {
+      const layerOps = Layers[layer] as unknown as LayerOperations
+      if (layerOps) {
+        layerOps.entities.remove(this)
+        layerOps.listeners.remove(this)
+      }
+    }
 
     this.garbage.forEach(fn => fn())
     super.destroy()

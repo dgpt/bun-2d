@@ -89,6 +89,7 @@ removeEntity(enemy)  // Remove entity from game
 The foundational building block for game objects, with integrated physics and sprite management.
 
 ```typescript
+import Layers from 'lib/Layers'
 // Create a basic entity
 const entity = new Entity('sprite-name', {
   position: { x: 0, y: 0 },
@@ -102,10 +103,10 @@ const entity = new Entity('sprite-name', {
 })
 
 // Add to specific layer
-entity.layers.add(GameLayers.player)
+entity.layers.add(Layers.player)
 
 // Listen for collisions with specific layer
-entity.on(GameLayers.npc, (npc) => {
+entity.on(Layers.npc, (npc) => {
   // Handle collision with NPC
 })
 ```
@@ -114,55 +115,46 @@ entity.on(GameLayers.npc, (npc) => {
 Manages rendering and collision layers with type-safe layer definitions.
 
 ```typescript
+// src/layers.ts
 // Define game-specific layers
-enum GameLayers {
-  player = 'player',
-  npc = 'npc',
-  item = 'item'
-}
-
-// Extend base LayerTypes
-declare module 'lib/Layers' {
-  interface LayerTypes {
-    player: GameLayers.player
-    npc: GameLayers.npc
-    item: GameLayers.item
-  }
-}
-
+import Layers from 'lib/Layers'
 // Register game layers
-new Layers(GameLayers)
+export default new Layers('player', 'npc', 'item')
 
+// src/player.ts
 // Use in entities
 entity.layers.add(Layers.player)
 entity.on(Layers.npc, (npc) => {
   // Handle NPC collision
 })
+
+
+// accessing entities from a layer
+const entities = Layers.player.entities
+// accessing all entities in game
+const allEntities = Layers.entities.entities
+// accessing entities listening to a layer
+const listeners = Layers.player.listeners
 ```
 
 ### Animation System (`animations.ts`)
 Handles sprite animations with type-safe animation definitions.
 
 ```typescript
-// Define game-specific animations
-declare module 'lib/animations' {
-  interface IAnimations {
-    attack: 'attack'
-    defend: 'defend'
-    jump: 'jump'
-  }
-}
-
 // Register game animations
-new Animations('attack', 'defend', 'jump')
-
-// Use in entities
 entity.animate({
-  idle: ['idle1', 'idle2'],
-  run: ['run1', 'run2', 'run3'],
-  attack: ['attack1', 'attack2'],
+  // system animations
+  idle: ['idleFrame1', 'idleFrame2'],
+  // custom animations
+  run: ['runFrame1', 'runFrame2', 'runFrame3'],
+  attack: ['attackFrame1', 'attackFrame2'],
   frameRate: 12
 })
+
+// Play animation
+import Animations from 'lib/animations'
+entity.playAnimation(Animations.idle)
+entity.playAnimation(Animations.run)
 ```
 
 ### Plugin System (`Plugin.ts`)
@@ -210,6 +202,7 @@ const player = new Entity('player', {
 Robust event handling with type-safe event definitions.
 
 ```typescript
+// src/events.ts
 // Define custom events
 declare module 'lib/events' {
   interface EventData {
@@ -217,14 +210,18 @@ declare module 'lib/events' {
     'item:pickup': { itemId: string }
   }
 }
+// register custom events
+export default new Events('player:levelup', 'item:pickup')
 
+// src/player.ts
+import Events from 'lib/events'
 // Listen for events
-entity.on('player:levelup', (data) => {
+entity.on(Events.playerLevelup, (data) => {
   console.log(`Level up to ${data.level}!`)
 })
 
 // Emit events
-emit('item:pickup', { itemId: 'potion' })
+emit(Events.itemPickup, { itemId: 'potion' })
 ```
 
 ### Dialog System (`Dialog.ts`)
@@ -266,7 +263,7 @@ entity.on(Events.dialogOpen, () => {
 Flexible movement system with multiple control schemes.
 
 ```typescript
-// Top-down keyboard movement
+// Top-down movement supporting keyboard, mouse, and touch controls
 const player = new Entity('player', {
   plugins: {
     movement: {
@@ -276,20 +273,6 @@ const player = new Entity('player', {
     }
   }
 })
-
-// Touch-based pathfinding movement
-const npc = new Entity('npc', {
-  plugins: {
-    movement: {
-      type: 'pathfinding',
-      maxSpeed: 3,
-      force: 0.005
-    }
-  }
-})
-
-// Find path to target
-findPath(npc, { x: 100, y: 100 })
 ```
 
 ### Scene Management (`Scene.ts`)
@@ -343,73 +326,6 @@ triggerZone.on(GameLayers.player, (player) => {
 ## Type Extension
 
 The engine uses TypeScript's module augmentation to allow type-safe extension of core systems.
-
-### Extending Layers
-```typescript
-// Define game-specific layers
-enum GameLayers {
-  player = 'player',
-  npc = 'npc',
-  item = 'item'
-}
-
-// Extend base LayerTypes
-declare module 'lib/Layers' {
-  interface LayerTypes {
-    player: GameLayers.player
-    npc: GameLayers.npc
-    item: GameLayers.item
-  }
-}
-
-// Register layers
-new Layers(GameLayers)
-```
-
-### Extending Animations
-```typescript
-// Define game-specific animations
-declare module 'lib/animations' {
-  interface IAnimations {
-    attack: 'attack'
-    defend: 'defend'
-    jump: 'jump'
-  }
-}
-
-// Register animations
-new Animations('attack', 'defend', 'jump')
-```
-
-### Extending Events
-```typescript
-// Define custom event types
-declare module 'lib/events' {
-  interface EventData {
-    'player:levelup': { level: number }
-    'item:pickup': { itemId: string }
-    'quest:complete': { questId: string, rewards: string[] }
-  }
-}
-```
-
-### Extending Plugins
-```typescript
-// Define custom plugin settings
-declare module 'lib/Plugin' {
-  interface PluginSettings {
-    movement: {
-      speed: number
-      type: 'top-down' | 'platformer'
-    }
-    combat: {
-      damage: number
-      range: number
-    }
-  }
-}
-```
-
 ## Performance Tips
 
 - Use static entities for immobile objects

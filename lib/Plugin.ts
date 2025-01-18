@@ -1,4 +1,4 @@
-import type { Events } from './events'
+import { Event } from './events'
 import type { Entity } from './Entity'
 
 export interface PluginSettings {
@@ -6,7 +6,7 @@ export interface PluginSettings {
 }
 
 export type PluginEvents = {
-  [K in Events | string]?: (entity: Entity, ...args: any[]) => void
+  [K in Event]?: (entity: Entity, ...args: any[]) => void
 }
 
 export type PluginInit<T> = (entity: Entity, settings?: T) => void

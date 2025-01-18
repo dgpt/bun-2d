@@ -1,25 +1,28 @@
 import type { Entity } from './Entity'
-import { Events, emit } from './events'
+import { emit } from './events'
+import { Events } from './events'
 
-// Base layer interface that can be extended by users
-export interface LayerTypes {
-  entities: 'entities'
+// System-defined layers enum
+export enum SystemLayers {
+  Entities = 'entities'
 }
 
-// Type for use in function parameters
-export type Layer = LayerTypes[keyof LayerTypes]
+// Type that combines system and user-defined layers
+export type Layer = SystemLayers | GameLayers
 
-type Entities = {
+// Layer operations interface
+export interface LayerOps {
   add: (entity: Entity) => void
   remove: (entity: Entity) => void
   has: (entity: Entity) => boolean
   length: number
+  name: string
   [Symbol.iterator](): Iterator<Entity>
 }
 
 type LayerOperations = {
-  entities: Entities
-  listeners: Entities
+  entities: LayerOps
+  listeners: LayerOps
   listen: (entity: Entity) => () => void
 }
 
@@ -29,24 +32,29 @@ type LayerInternals = {
 }
 
 // Internal storage
-const layers: Partial<Record<Layer, LayerInternals>> = {}
+const layers = new Map<Layer, LayerInternals>()
 
 const findIndexByEntity = (arr: Entity[], entity: Entity) => arr.findIndex(e => e.id === entity.id)
 
-const getLayer = (layer: Layer): LayerOperations | null => {
-  const layerData = layers[layer]
+const getLayer = (layerName: Layer): LayerOperations | null => {
+  const layerData = layers.get(layerName)
   if (!layerData) {
-    return null
+    layers.set(layerName, {
+      entities: [],
+      listeners: []
+    })
+    return getLayer(layerName)
   }
 
-  const createEntitySet = (arr: Entity[]): Entities => ({
+  const createEntitySet = (arr: Entity[]): LayerOps => ({
+    name: layerName,
     add: (entity: Entity) => {
       const idx = findIndexByEntity(arr, entity)
       if (idx === -1) {
         arr.push(entity)
-        if (!entity.layers.has(layer)) {
-          entity.layers.add(layer)
-          emit(Events.entityLayerAdded, { entity, layer })
+        if (!entity.layers.has(layerName)) {
+          entity.layers.add(layerName)
+          emit(Events.entityLayerAdded, { entity, layer: layerName })
         }
       }
     },
@@ -54,9 +62,9 @@ const getLayer = (layer: Layer): LayerOperations | null => {
       const idx = findIndexByEntity(arr, entity)
       if (idx !== -1) {
         arr.splice(idx, 1)
-        if (entity.layers.has(layer)) {
-          entity.layers.delete(layer)
-          emit(Events.entityLayerRemoved, { entity, layer })
+        if (entity.layers.has(layerName)) {
+          entity.layers.delete(layerName)
+          emit(Events.entityLayerRemoved, { entity, layer: layerName })
         }
       }
     },
@@ -87,43 +95,28 @@ const getLayer = (layer: Layer): LayerOperations | null => {
   }
 }
 
-// using a class so we can use the constructor to add layers
-// e.g. new Layers(Layer.A, Layer.B, Layer.C)
-class BaseLayers {
-  constructor(input: Layer[] | Record<string, Layer> | Layer, ...rest: Layer[]) {
-    const newLayers = Array.isArray(input)
-      ? input
-      : typeof input === 'object'
-        ? Object.values(input)
-        : [input, ...rest]
-
-    newLayers.forEach(layer => {
-      layers[layer] = {
-        entities: [],
-        listeners: []
-      }
-    })
-  }
-}
-
 // Type for the Layers proxy
 type LayersType = {
-  new(input: Layer[] | Record<string, Layer> | Layer, ...rest: Layer[]): BaseLayers
+  [K in SystemLayers]: K
 } & {
-  [K in Layer]: LayerOperations
-}
+  [K in GameLayers]: K
+} & LayerOperations
 
 // Create the proxy with both instance and constructor functionality
-const Layers = new Proxy(BaseLayers, {
-  construct(target: typeof BaseLayers, args: ConstructorParameters<typeof BaseLayers>) {
-    return new BaseLayers(...args)
-  },
-  get(target: typeof BaseLayers, prop: string | symbol) {
+const Layers = new Proxy({} as LayersType, {
+  get(target: LayersType, prop: string | symbol) {
     return getLayer(prop as Layer)
   }
-}) as LayersType
+})
 
-// Initialize the default entities layer
-new Layers('entities')
+// Initialize system layers
+Object.values(SystemLayers).forEach(layer => {
+  if (!layers.has(layer)) {
+    layers.set(layer, {
+      entities: [],
+      listeners: []
+    })
+  }
+})
 
 export default Layers

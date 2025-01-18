@@ -18,11 +18,11 @@ class KeyboardMovementPlugin extends MovementPlugin {
 
     // Register keyboard event handlers
     entity.gc(
-      on(Events.keyDown, (event) => {
+      on(Events.keyDown, (_, { key }) => {
         const dir = getMovementDirection(entity)
 
         // Update movement direction based on key
-        switch (event.key.toLowerCase()) {
+        switch (key.toLowerCase()) {
           case Keys.W:
           case Keys.ArrowUp:
             dir.y = -1
@@ -44,14 +44,14 @@ class KeyboardMovementPlugin extends MovementPlugin {
         setMovementDirection(entity, dir)
       }),
 
-      on(Events.keyUp, (event) => {
+      on(Events.keyUp, (_, { key }) => {
         // Don't process input if entity is static
         if (entity.static) return
 
         const dir = getMovementDirection(entity)
 
         // Reset movement direction if it matches the released key
-        switch (event.key.toLowerCase()) {
+        switch (key.toLowerCase()) {
           case Keys.W:
           case Keys.ArrowUp:
             if (dir.y === -1) dir.y = 0

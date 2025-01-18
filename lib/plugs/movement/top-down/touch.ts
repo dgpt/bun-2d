@@ -1,5 +1,5 @@
-import type { Entity } from 'lib/Entity'
-import type { MovementSettings } from 'lib/plugs/movement'
+import { Entity } from 'lib/Entity'
+import type { MovementSettings, Target } from '../types'
 import { Events, on, type EventData } from 'lib/events'
 import { handleMovementAnimation } from '../animate'
 import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'
@@ -7,9 +7,10 @@ import { MovementPlugin } from '../MovementPlugin'
 import { findPath, getNextPathPoint, clearPath, hasActivePath } from '../pathfinding'
 import Layers from 'lib/Layers'
 import { DEFAULT_MOVEMENT_SETTINGS } from '../settings'
+import type { IPointData } from 'pixi.js'
 
 class TouchMovementPlugin extends MovementPlugin {
-  private targetEntity?: Entity
+  private target?: Target
   private lastVelocity = 0
   private stuckCounter = 0
 
@@ -28,16 +29,12 @@ class TouchMovementPlugin extends MovementPlugin {
       if (e.id !== entity.id) {
         e.eventMode = 'dynamic'
         e.cursor = 'pointer'
+        e.hitArea = e.getBounds()
         e.on(Events.pointerTap, () => {
-          // Clear any existing path and target
-          clearPath(entity)
-          this.targetEntity = undefined
-          this.stuckCounter = 0
-
+          console.log('entity tap', e)
           // Set new target and path using physics body position
-          this.targetEntity = e
-          const targetPos = e.body.position
-          findPath(entity, targetPos, e)
+          this.target = e
+          findPath(entity, e.body.position, e)
         })
       }
     }
@@ -49,49 +46,51 @@ class TouchMovementPlugin extends MovementPlugin {
 
     // Listen for new entities and make them interactive too
     entity.gc(
-      on(Events.entityLayerAdded, (data: EventData[Events.entityLayerAdded]) => {
+      on(Events.entityLayerAdded, (data) => {
         if (data.layer === 'entities') {
           makeEntityInteractive(data.entity)
         }
       }),
 
       // Handle stage clicks for non-entity movement
-      on(Events.pointerDown, (event: EventData[Events.pointerDown]) => {
-        // Only handle clicks that aren't on entities
-        const target = Array.from(Layers.entities.entities).find(e => {
-          if (e === entity) return false
-          const bounds = e.getBounds()
-          return event.x >= bounds.left && event.x <= bounds.right &&
-            event.y >= bounds.top && event.y <= bounds.bottom
+      on(Events.pointerDown, (_, { x, y }) => {
+        // Check if we're clicking near an entity
+        const nearestEntity = Array.from(Layers.entities.entities).find((e: Entity) => {
+          if (e.id === entity.id) return false
+          const dx = e.x - x
+          const dy = e.y - y
+          // Use entity width/height for proximity check
+          const proximityThreshold = Math.max(e.width, e.height) * 0.75
+          return Math.sqrt(dx * dx + dy * dy) <= proximityThreshold
         })
 
-        if (!target) {
-          // Clear any existing path and target
-          clearPath(entity)
-          this.targetEntity = undefined
-          this.stuckCounter = 0
-
-          // Find path to clicked position
-          findPath(entity, { x: event.x, y: event.y })
+        // If clicking near an entity, target that entity
+        if (nearestEntity) {
+          this.target = nearestEntity
+          findPath(entity, nearestEntity.body.position, nearestEntity)
+        } else {
+          // Otherwise, move to clicked position
+          this.target = { x, y }
+          findPath(entity, { x, y })
         }
       }),
 
-      // Handle keyboard input by clearing the path
+      // Handle keyboard input by clearing the path only if we have a target
       on(Events.keyDown, () => {
-        if (hasActivePath(entity)) {
-          clearPath(entity)
-          this.targetEntity = undefined
-          this.stuckCounter = 0
-        }
+        clearPath(entity)
+        this.target = undefined
+        this.stuckCounter = 0
       }),
 
       // Handle collisions
       on(Events.collision, (event) => {
         const { a, b } = event
         const otherEntity = a?.id === entity?.id ? b : a
-        if (this.targetEntity && otherEntity?.id === this.targetEntity.id) {
+        console.log('collision', otherEntity, this.target)
+        if (this.target && this.target instanceof Entity && otherEntity?.id === this.target.id) {
+          console.log('collision with target')
           clearPath(entity)
-          this.targetEntity = undefined
+          this.target = undefined
           this.stuckCounter = 0
         }
       })
@@ -99,7 +98,14 @@ class TouchMovementPlugin extends MovementPlugin {
   }
 
   update(entity: Entity) {
-    // Check for active path first
+    if (!this.target) return
+
+    // Check if we have an active path first
+    if (!hasActivePath(entity)) {
+      this.stopMovement(entity)
+      return
+    }
+
     const nextPoint = getNextPathPoint(entity)
     if (nextPoint) {
       const dir = {
@@ -107,71 +113,20 @@ class TouchMovementPlugin extends MovementPlugin {
         y: nextPoint.y - entity.body.position.y
       }
 
-      // Calculate current velocity magnitude
-      const currentVelocity = Math.sqrt(entity.velocity.x ** 2 + entity.velocity.y ** 2)
-
-      // Calculate distance to target
-      const distance = Math.sqrt(dir.x * dir.x + dir.y * dir.y)
-
-      // Only check for stuck state if we're far enough from target (using entity width)
-      const minDistance = entity.width * 1.5
-      if (distance > minDistance) {
-        // Get movement settings to determine velocity threshold
-        const settings = entity.plugins.get(this.name) as MovementSettings
-        const maxSpeed = settings?.maxSpeed ?? DEFAULT_MOVEMENT_SETTINGS.maxSpeed
-        const velocityThreshold = maxSpeed * 0.01 // 1% of max speed as threshold
-
-        // Only start checking for stuck state after a few frames
-        if (this.lastVelocity > 0) {
-          // Check if we're stuck (very low absolute velocity)
-          if (currentVelocity < velocityThreshold) {
-            this.stuckCounter++
-          } else {
-            this.stuckCounter = 0
-          }
-
-          // If stuck for too long, stop movement
-          if (this.stuckCounter > 60) { // Increased threshold
-            clearPath(entity)
-            this.targetEntity = undefined
-            this.stuckCounter = 0
-            return
-          }
-        }
-      }
-
-      this.lastVelocity = currentVelocity
-
-      // Get distance to final destination if we have a target entity
-      let shouldStop = false
-      if (this.targetEntity) {
-        const finalDx = this.targetEntity.x - entity.x
-        const finalDy = this.targetEntity.y - entity.y
-        const finalDistance = Math.sqrt(finalDx * finalDx + finalDy * finalDy)
-        shouldStop = finalDistance < this.targetEntity.width / 2
-      }
-
-      // Stop if we're close enough to next point or final destination
-      if (distance < 5 || shouldStop) {
-        clearPath(entity)
-        this.targetEntity = undefined
-        return
-      }
-
       // Apply force more directly to match keyboard movement feel
       const normalized = normalizeDirection(dir)
-      applyMovementForce(entity, normalized.x * 1.2, normalized.y * 1.2) // Boost force application
+      applyMovementForce(entity, normalized.x * 1.5, normalized.y * 1.5) // Boost force application
       handleMovementAnimation(entity, normalized)
       return
     }
 
-    // Fall back to direct movement if no path
-    const dir = getMovementDirection(entity)
-    if (dir.x === 0 && dir.y === 0) return
+    this.stopMovement(entity)
+  }
 
-    const normalized = normalizeDirection(dir)
-    applyMovementForce(entity, normalized.x, normalized.y)
-    handleMovementAnimation(entity, normalized)
+  private stopMovement(entity: Entity) {
+    clearPath(entity)
+    this.target = undefined
+    this.stuckCounter = 0
   }
 }
 

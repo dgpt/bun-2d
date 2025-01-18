@@ -1,5 +1,5 @@
 import { Actor } from '../lib/Actor'
-import Layers from './layers'
+import Layers from 'lib/Layers'
 
 export default function createPlayer() {
   const player = new Actor('c01-0', {
