@@ -9,6 +9,6 @@ export default function createPlayer() {
       }
     }
   })
-  player.layers.add(Layers.player)
+  Layers.add(Layers.player, player)
   return player
 }

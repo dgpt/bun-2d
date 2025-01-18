@@ -1,6 +1,6 @@
 import type { Entity } from 'lib/Entity'
 import type { MovementSettings } from 'lib/plugs/movement'
-import { Events, on, type EventData } from 'lib/events'
+import { Events, on } from 'lib/events'
 import { Keys } from 'lib/keys'
 import { handleMovementAnimation } from '../animate'
 import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'

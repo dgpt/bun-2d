@@ -2,7 +2,7 @@ import { Grid, BiBreadthFirstFinder, DiagonalMovement } from 'pathfinding'
 import { Entity } from 'lib/Entity'
 import type { IPointData } from 'pixi.js'
 import { getState } from 'lib/Game'
-import { Events, on, type EventData } from 'lib/events'
+import { Events, on } from 'lib/events'
 import Layers from 'lib/Layers'
 import { Body } from 'matter-js'
 import type { Target, PathData } from './types'
@@ -141,7 +141,7 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
   const grid = new Grid(gridWidth, gridHeight)
 
   // Mark static entities and other obstacles
-  for (const other of Layers.entities.entities) {
+  for (const other of Layers.get(Layers.entities)) {
     if (other.id === entity.id) continue // Skip self
     if (target instanceof Entity && other.id === target.id) continue // Skip target entity
     markEntityOnGrid(grid, other)

@@ -30,7 +30,7 @@ Object.keys(Layers).forEach(layer => {
 })
 
 // Layer management implementation
-Layers.add = (layer: Layers, entity: Entity) => {
+Layers.add = (layer, entity) => {
   const entities = layerEntities.get(layer)
   if (!entities) {
     layerEntities.set(layer, [entity])
@@ -39,20 +39,20 @@ Layers.add = (layer: Layers, entity: Entity) => {
   }
 }
 
-Layers.remove = (layer: Layers, entity: Entity) => {
+Layers.remove = (layer, entity) => {
   const entities = layerEntities.get(layer)
   entities?.splice(entities.indexOf(entity), 1)
 }
 
-Layers.has = (layer: Layers, entity: Entity): boolean => {
+Layers.has = (layer, entity) => {
   return layerEntities.get(layer)?.includes(entity) ?? false
 }
 
-Layers.get = (layer: Layers): Entity[] => {
+Layers.get = (layer) => {
   return layerEntities.get(layer) ?? []
 }
 
-Layers.listen = (layer: Layers, entity: Entity): void => {
+Layers.listen = (layer, entity) => {
   // Listen for Matter.js collision events through our event system
   entity.gc(
     on(Events.collisionStart, (_, { pairs }) => {

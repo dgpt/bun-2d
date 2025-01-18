@@ -18,9 +18,9 @@ declare global {
     export const doAThing = 'doAThing'
   }
 
-  namespace Layers {
-    export const npc = 'npc'
-    export const player = 'player'
+  enum Layers {
+    npc = 'npc',
+    player = 'player'
   }
 }
 
@@ -32,8 +32,10 @@ export function createRupert(): Entity {
   })
 
   // Add to NPC layer
-  rupert.layers.add(Layers.npc)
-  rupert.layers.add(Layers.meow) // Claude: this should have a type error
+  Layers.add(Layers.npc, rupert)
+  Layers.add(Layers.entities, rupert)
+  rupert.layers.push(Layers.entities)
+  rupert.layers.push(Layers.meow) // Claude: this should have a type error
 
   // Setup collision animation
   rupert.animate({
@@ -90,6 +92,11 @@ export function createRupert(): Entity {
   on(Events.doAThing, (event, data) => {
     console.log('do a thing', data.value)
   })
+
+  emit(Events.customEvent)
+  emit(Events.doAThing, { value: 42 })
+  rupert.emit(Events.customEvent)
+  rupert.emit(Events.doAThing, { value: 42 })
 
   rupert.on(Events.notAThing, () => { // Claude: this should have a type error
     console.log('not a thing')

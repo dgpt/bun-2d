@@ -1,6 +1,6 @@
 import { Entity } from 'lib/Entity'
 import type { MovementSettings, Target } from '../types'
-import { Events, on, type EventData } from 'lib/events'
+import { Events, on } from 'lib/events'
 import { handleMovementAnimation } from '../animate'
 import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'
 import { MovementPlugin } from '../MovementPlugin'
@@ -40,22 +40,22 @@ class TouchMovementPlugin extends MovementPlugin {
     }
 
     // Make existing entities interactive
-    for (const e of Layers.entities.entities) {
+    for (const e of Layers.get(Layers.entities)) {
       makeEntityInteractive(e)
     }
 
     // Listen for new entities and make them interactive too
     entity.gc(
-      on(Events.entityLayerAdded, (data) => {
-        if (data.layer === 'entities') {
-          makeEntityInteractive(data.entity)
+      on(Events.entityLayerAdded, (_, { entity, layer }) => {
+        if (layer === Layers.entities) {
+          makeEntityInteractive(entity)
         }
       }),
 
       // Handle stage clicks for non-entity movement
       on(Events.pointerDown, (_, { x, y }) => {
         // Check if we're clicking near an entity
-        const nearestEntity = Array.from(Layers.entities.entities).find((e: Entity) => {
+        const nearestEntity = Layers.get(Layers.entities).find((e: Entity) => {
           if (e.id === entity.id) return false
           const dx = e.x - x
           const dy = e.y - y
@@ -83,8 +83,7 @@ class TouchMovementPlugin extends MovementPlugin {
       }),
 
       // Handle collisions
-      on(Events.collision, (event) => {
-        const { a, b } = event
+      on(Events.collision, (_, { a, b }) => {
         const otherEntity = a?.id === entity?.id ? b : a
         console.log('collision', otherEntity, this.target)
         if (this.target && this.target instanceof Entity && otherEntity?.id === this.target.id) {

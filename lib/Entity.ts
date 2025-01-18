@@ -1,8 +1,8 @@
 import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Container, Texture } from 'pixi.js'
 import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
-import Layers, { type Layer, type LayerOps } from './Layers'
+import Layers from './Layers'
 import { getState } from './Game'
-import Events, { type SystemEvents, type Event, type EventData, isPixiEvent, on, emit } from './events'
+import Events, { isPixiEvent, on, emit } from './events'
 import { Plugin, type PluginSettings } from './Plugin'
 import Animations, { type Animation } from './animations'
 // Default physics values optimized for top-down 2D game
@@ -207,22 +207,18 @@ export class Entity extends Container {
     }
   }
 
-  on<T extends keyof DisplayObjectEvents>(event: T, fn: (...args: [Extract<T, keyof DisplayObjectEvents>]) => void, context?: any): this;
   on<E extends keyof EventData>(event: E, fn: (event: CustomEvent<EventData[E]>, data: EventData[E]) => void): this;
-  on(event: Layer, fn: (event: CustomEvent<Entity>, data: Entity) => void): this;
-  on(event: any, fn: (...args: any[]) => void, context?: any): this {
+  on(event: Layers, fn: (event: Layers, data: Entity) => void): this;
+  on(event: any, fn: (...args: any[]) => void): this {
     if (isPixiEvent(event)) {
       // For PIXI events, register with PIXI and track for cleanup
-      super.on(event, fn, context)
-      this.gc(() => super.off(event, fn, context))
+      super.on(event, fn)
+      this.gc(() => super.off(event, fn))
     } else if (Object.values(Events).includes(event)) {
       this.gc(on(event, fn))
-    } else if (event?.name && Object.values(Layers).includes(event)) {
+    } else if (Object.values(Layers).includes(event)) {
       // Add this entity as a listener for the layer
-      const layer = Layers.get(event as Layer)
-      if (layer && Layers.has(event as Layer, this)) {
-        Layers.listen(event, this)
-      }
+      Layers.listen(event, this)
     }
     return this
   }
