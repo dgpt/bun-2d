@@ -1,23 +1,17 @@
 import { Container } from 'pixi.js'
-import { Events, emit } from './events'
+import { emit } from './events'
 import { getState } from './Game'
 
-export enum Scenes {
-  main = 'main',
-  menu = 'menu'
-}
-
-type SceneName = Scenes | string
 type SceneStage = (container: Container) => void | Promise<void>
 
-const scenes = new Map<SceneName, Scene>()
+const scenes = new Map<string, Scene>()
 let currentScene: Scene | null = null
 
 export default class Scene {
   private container: Container
 
   constructor(
-    readonly name: SceneName,
+    readonly name: string,
     private stage: SceneStage
   ) {
     this.container = new Container()
@@ -38,7 +32,7 @@ export default class Scene {
   }
 }
 
-export const setScene = async (name: SceneName): Promise<void> => {
+export const setScene = async (name: string): Promise<void> => {
   const scene = scenes.get(name)
   if (!scene) throw new Error(`Scene ${name} not found`)
 

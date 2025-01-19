@@ -1,10 +1,10 @@
 import { Sprite, AnimatedSprite, type IPointData, type DisplayObjectEvents, Container, Texture } from 'pixi.js'
 import { Bodies, Body, World, type IBodyDefinition } from 'matter-js'
-import Layers from './Layers'
 import { getState } from './Game'
-import Events, { isPixiEvent, on, emit } from './events'
+import { isPixiEvent, on, emit, type EventHandler } from './events'
 import { Plugin, type PluginSettings } from './Plugin'
-import Animations, { type Animation } from './animations'
+import Layer from './layer'
+
 // Default physics values optimized for top-down 2D game
 const DEFAULT_PHYSICS: IBodyDefinition = {
   isStatic: false,
@@ -27,7 +27,7 @@ export type EntityOptions = {
 
 export class Entity extends Container {
   public body: Matter.Body
-  public layers: Layer[] = []
+  public layers: Layers[] = []
   public animationSpeed = 0.1
   public staticAnimationDelay = 800
   public name = 'Entity'
@@ -35,7 +35,7 @@ export class Entity extends Container {
   public readonly id = crypto.randomUUID()
 
   private garbage: Array<() => void> = []
-  private animations: Record<Animation, string | string[]> | Record<never, never> = {}
+  private animations: Partial<Record<Animations, string | string[]>> = {}
   private currentSprite?: Sprite | AnimatedSprite
   private updaters = new Set<() => void>()
 
@@ -51,8 +51,8 @@ export class Entity extends Container {
     })
 
     // Listen for basic animation events
-    this.on(Events.animation, (event: Event, data: EventData[Events.animation]) => {
-      this.playAnimation(data.type as Animation)
+    this.on(Events.animation, (data) => {
+      this.playAnimation(data.type)
     })
 
     // Create physics body with sprite dimensions
@@ -80,15 +80,15 @@ export class Entity extends Container {
     })
 
     // Setup collision animation handling
-    this.on(Layers.entities, (event: Event, data: Entity) => {
+    this.on(Layers.entities, (other) => {
       console.log('collision')
       // Emit collision animation event
-      emit(Events.animation, { type: 'collision' })
+      other.emit(Events.animation, { type: 'collision' })
     })
   }
 
-  get sprite(): Sprite | AnimatedSprite {
-    return this.currentSprite!
+  get sprite(): Sprite | AnimatedSprite | undefined {
+    return this.currentSprite
   }
 
   set sprite(value: string | string[]) {
@@ -147,22 +147,23 @@ export class Entity extends Container {
     return this.currentSprite
   }
 
-  animate(animation: Animation, ...textureNames: string[]): void;
-  animate(map: Partial<Record<Animation, string | string[]>>): void;
-  animate(animationOrMap: Animation | Partial<Record<Animation, string | string[]>>, ...textureNames: string[]): void {
+  animate(animation: Animations, ...textureNames: string[]): void;
+  animate(map: Partial<Record<Animations, string | string[]>>): void;
+  animate(animationOrMap: Animations | Partial<Record<Animations, string | string[]>>, ...textureNames: string[]): void {
     if (typeof animationOrMap === 'object') {
       // Merge animation map directly
       this.animations = { ...this.animations, ...animationOrMap }
-    } else {
+    } else if (animationOrMap in Animations) {
       // Add single animation with rest parameters as texture names
       this.animations[animationOrMap] = textureNames.length === 1 ? textureNames[0] : textureNames
     }
   }
 
-  playAnimation(name: Animation): Sprite | AnimatedSprite | undefined {
+  playAnimation(name: Animations): Sprite | AnimatedSprite | undefined {
     // Check if it's a registered animation
-    if (name in this.animations) {
-      return this.setSprite(this.animations[name])
+    const animation = this.animations[name]
+    if (animation) {
+      return this.setSprite(animation)
     }
     return undefined
   }
@@ -207,18 +208,35 @@ export class Entity extends Container {
     }
   }
 
-  on<E extends keyof EventData>(event: E, fn: (event: CustomEvent<EventData[E]>, data: EventData[E]) => void): this;
-  on(event: Layers, fn: (event: Layers, data: Entity) => void): this;
-  on(event: any, fn: (...args: any[]) => void): this {
-    if (isPixiEvent(event)) {
-      // For PIXI events, register with PIXI and track for cleanup
-      super.on(event, fn)
-      this.gc(() => super.off(event, fn))
-    } else if (Object.values(Events).includes(event)) {
-      this.gc(on(event, fn))
-    } else if (Object.values(Layers).includes(event)) {
+  // Method overloads for different event types
+  on<T extends keyof DisplayObjectEvents>(
+    event: T,
+    fn: (...args: any[]) => any,
+    context?: any
+  ): this;
+  on<E extends Events | Layers>(
+    event: E,
+    fn: (data: EventDataForEvent<E>, event: CustomEvent<EventDataForEvent<E>>) => void
+  ): this;
+  on(
+    event: keyof DisplayObjectEvents | Events | Layers,
+    fn: ((...args: any[]) => any) | ((data: any, event: CustomEvent<any>) => void),
+    context?: any
+  ): this {
+    if (typeof event === 'string' && event in Layers) {
       // Add this entity as a listener for the layer
-      Layers.listen(event, this)
+      Layer.listen(event as Layers, this)
+    } else if (isPixiEvent(event as Events)) {
+      // For PIXI events, register with PIXI and track for cleanup
+      const pixiHandler = ((...args: any[]) => {
+        const customEvent = new CustomEvent(event as string, { detail: args[0] })
+        fn(args[0], customEvent)
+      }) as (...args: any[]) => void
+      super.on(event as keyof DisplayObjectEvents, pixiHandler, context)
+      this.gc(() => super.off(event as keyof DisplayObjectEvents, pixiHandler))
+    } else {
+      // For all other events, use our event system
+      this.gc(on(event as Events, fn as EventHandler<Events>))
     }
     return this
   }
@@ -260,9 +278,9 @@ export class Entity extends Container {
 
     if (plugin.events) {
       // Register all plugin events
-      for (const [event, handler] of Object.entries(plugin.events)) {
+      for (const [eventName, handler] of Object.entries(plugin.events)) {
         if (!handler) continue
-        this.on(event, handler.bind(plugin, this))
+        this.on(eventName as Events, handler.bind(plugin, this) as EventHandler<Events>)
       }
     }
 

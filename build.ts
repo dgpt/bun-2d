@@ -7,7 +7,9 @@ const build = async () => {
   })
 
   if (!prebuild.success) {
-    console.error(prebuild.logs.join('\n\n'))
+    prebuild.logs.forEach(log => {
+      console.error(log)
+    })
     return
   }
 
@@ -21,7 +23,9 @@ const build = async () => {
   })
 
   if (!build.success) {
-    console.error(build.logs.join('\n\n'))
+    build.logs.forEach(log => {
+      console.error(log)
+    })
     return
   }
   console.log('\\o/')

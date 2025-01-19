@@ -1,13 +1,12 @@
 import { Entity } from 'lib/Entity'
 import type { MovementSettings, Target } from '../types'
-import { Events, on } from 'lib/events'
+import { on } from 'lib/events'
 import { handleMovementAnimation } from '../animate'
-import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'
+import { applyMovementForce, normalizeDirection } from '../move'
 import { MovementPlugin } from '../MovementPlugin'
 import { findPath, getNextPathPoint, clearPath, hasActivePath } from '../pathfinding'
-import Layers from 'lib/Layers'
 import { DEFAULT_MOVEMENT_SETTINGS } from '../settings'
-import type { IPointData } from 'pixi.js'
+import Layer from 'lib/layer'
 
 class TouchMovementPlugin extends MovementPlugin {
   private target?: Target
@@ -40,22 +39,23 @@ class TouchMovementPlugin extends MovementPlugin {
     }
 
     // Make existing entities interactive
-    for (const e of Layers.get(Layers.entities)) {
+    for (const e of Layer.get(Layers.entities)) {
       makeEntityInteractive(e)
     }
+    console.log('events', Events)
 
     // Listen for new entities and make them interactive too
     entity.gc(
-      on(Events.entityLayerAdded, (_, { entity, layer }) => {
-        if (layer === Layers.entities) {
-          makeEntityInteractive(entity)
-        }
+      on(Events.entityAdded, (entity) => {
+        makeEntityInteractive(entity)
       }),
 
       // Handle stage clicks for non-entity movement
-      on(Events.pointerDown, (_, { x, y }) => {
+      on(Events.pointerDown, ({ x, y }) => {
+        console.log('pointer down', x, y)
+
         // Check if we're clicking near an entity
-        const nearestEntity = Layers.get(Layers.entities).find((e: Entity) => {
+        const nearestEntity = Layer.get(Layers.entities).find((e: Entity) => {
           if (e.id === entity.id) return false
           const dx = e.x - x
           const dy = e.y - y
@@ -83,7 +83,7 @@ class TouchMovementPlugin extends MovementPlugin {
       }),
 
       // Handle collisions
-      on(Events.collision, (_, { a, b }) => {
+      on(Events.collision, ({ a, b }) => {
         const otherEntity = a?.id === entity?.id ? b : a
         console.log('collision', otherEntity, this.target)
         if (this.target && this.target instanceof Entity && otherEntity?.id === this.target.id) {

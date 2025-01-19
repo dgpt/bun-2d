@@ -1,5 +1,4 @@
 import { Container, Text, Graphics } from 'pixi.js'
-import { Events } from './events'
 import { emit } from './events'
 import { getState } from './Game'
 import { Keys } from './keys'

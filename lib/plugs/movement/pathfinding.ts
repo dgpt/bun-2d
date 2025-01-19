@@ -2,11 +2,10 @@ import { Grid, BiBreadthFirstFinder, DiagonalMovement } from 'pathfinding'
 import { Entity } from 'lib/Entity'
 import type { IPointData } from 'pixi.js'
 import { getState } from 'lib/Game'
-import { Events, on } from 'lib/events'
-import Layers from 'lib/Layers'
+import { on } from 'lib/events'
 import { Body } from 'matter-js'
 import type { Target, PathData } from './types'
-
+import Layer from 'lib/layer'
 // Grid size for pathfinding (smaller = more precise but slower)
 const GRID_CELL_SIZE = 32
 
@@ -75,13 +74,30 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
   // If we have a target entity, update the path end point
   if (pathData.target instanceof Entity) {
     const lastPoint = pathData.path[pathData.path.length - 1]
+    const { app } = getState()
+
+    // Check if target is off screen or too far
+    if (
+      pathData.target.x < 0 ||
+      pathData.target.x > app.screen.width ||
+      pathData.target.y < 0 ||
+      pathData.target.y > app.screen.height
+    ) {
+      clearPath(entity)
+      return null
+    }
+
     if (
       Math.abs(pathData.target.x - lastPoint.x) > GRID_CELL_SIZE ||
       Math.abs(pathData.target.y - lastPoint.y) > GRID_CELL_SIZE
     ) {
       // Recalculate path if target has moved significantly
-      findPath(entity, { x: pathData.target.x, y: pathData.target.y }, pathData.target)
-      return getNextPathPoint(entity)
+      const newPath = findPath(entity, { x: pathData.target.x, y: pathData.target.y }, pathData.target)
+      if (!newPath || newPath.length === 0) {
+        clearPath(entity)
+        return null
+      }
+      return pathData.path[0] // Return first point of new path directly instead of recursing
     }
   }
 
@@ -93,7 +109,8 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
   // If we're close enough to the next point, remove it and get the next one
   if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
     pathData.path.shift()
-    return getNextPathPoint(entity)
+    // Return null if no more points, otherwise return next point directly
+    return pathData.path.length === 0 ? null : pathData.path[0]
   }
 
   return nextPoint
@@ -127,6 +144,16 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
   // Clear any existing path before starting a new one
   clearPath(entity)
 
+  // Validate destination is within screen bounds
+  if (
+    destination.x < 0 ||
+    destination.x > app.screen.width ||
+    destination.y < 0 ||
+    destination.y > app.screen.height
+  ) {
+    return []
+  }
+
   // Skip pathfinding if target is at current position (used for stopping)
   if (Math.abs(destination.x - entity.x) < 5 && Math.abs(destination.y - entity.y) < 5) {
     return []
@@ -141,7 +168,7 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
   const grid = new Grid(gridWidth, gridHeight)
 
   // Mark static entities and other obstacles
-  for (const other of Layers.get(Layers.entities)) {
+  for (const other of Layer.get(Layers.entities)) {
     if (other.id === entity.id) continue // Skip self
     if (target instanceof Entity && other.id === target.id) continue // Skip target entity
     markEntityOnGrid(grid, other)

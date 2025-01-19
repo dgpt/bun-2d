@@ -1,6 +1,6 @@
 import type { Entity } from 'lib/Entity'
 import type { MovementSettings } from 'lib/plugs/movement'
-import { Events, on } from 'lib/events'
+import { on } from 'lib/events'
 import { Keys } from 'lib/keys'
 import { handleMovementAnimation } from '../animate'
 import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'
@@ -16,9 +16,11 @@ class KeyboardMovementPlugin extends MovementPlugin {
     }
     super.init(entity, mergedSettings)
 
+    console.log('KeyboardMovementPlugin init', entity)
     // Register keyboard event handlers
     entity.gc(
-      on(Events.keyDown, (_, { key }) => {
+      on(Events.keyDown, (key) => {
+        console.log('keyDown', key)
         const dir = getMovementDirection(entity)
 
         // Update movement direction based on key
@@ -44,7 +46,7 @@ class KeyboardMovementPlugin extends MovementPlugin {
         setMovementDirection(entity, dir)
       }),
 
-      on(Events.keyUp, (_, { key }) => {
+      on(Events.keyUp, (key) => {
         // Don't process input if entity is static
         if (entity.static) return
 

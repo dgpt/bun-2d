@@ -1,7 +1,6 @@
 import type { Entity } from 'lib/Entity'
 import type { IPointData } from 'pixi.js'
-import { Events, emit } from 'lib/events'
-import Animations from 'lib/animations'
+import { emit } from 'lib/events'
 
 // Default sprite direction (facing right)
 export const DEFAULT_SPRITE_DIRECTION: IPointData = { x: 1, y: 0 }

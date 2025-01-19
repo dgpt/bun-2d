@@ -1,23 +1,7 @@
-import type { Entity } from './Entity'
-import { on, emit } from './events'
-
-// Layer type definitions
-declare global {
-  // Base layers namespace that acts like an enum
-  enum Layers {
-    // Core game layers
-    entities = 'entities'
-  }
-
-  namespace Layers {
-    // Layer management functions
-    export function add(layer: Layers, entity: Entity): void
-    export function remove(layer: Layers, entity: Entity): void
-    export function has(layer: Layers, entity: Entity): boolean
-    export function get(layer: Layers): Entity[]
-    export function listen(layer: Layers, entity: Entity): void
-  }
-}
+import type { Entity } from 'lib/Entity'
+import { on, emit } from 'lib/events'
+import type { Pair, Engine, IEventCollision } from 'matter-js'
+import 'lib/global'
 
 // Internal storage for layer entities
 const layerEntities = new Map<Layers, Entity[]>()
@@ -30,40 +14,44 @@ Object.keys(Layers).forEach(layer => {
 })
 
 // Layer management implementation
-Layers.add = (layer, entity) => {
+export const add = (layer: Layers, entity: Entity) => {
   const entities = layerEntities.get(layer)
   if (!entities) {
     layerEntities.set(layer, [entity])
   } else {
     entities.push(entity)
   }
+  emit(Events.entityAdded, entity)
 }
 
-Layers.remove = (layer, entity) => {
+export const remove = (layer: Layers, entity: Entity) => {
   const entities = layerEntities.get(layer)
   entities?.splice(entities.indexOf(entity), 1)
+  emit(Events.entityRemoved, entity)
 }
 
-Layers.has = (layer, entity) => {
+export const has = (layer: Layers, entity: Entity) => {
   return layerEntities.get(layer)?.includes(entity) ?? false
 }
 
-Layers.get = (layer) => {
+export const get = (layer: Layers) => {
   return layerEntities.get(layer) ?? []
 }
 
-Layers.listen = (layer, entity) => {
+export const listen = (layer: Layers, entity: Entity) => {
   // Listen for Matter.js collision events through our event system
   entity.gc(
-    on(Events.collisionStart, (_, { pairs }) => {
+    on(Events.collisionStart, (event) => {
       // Handle each collision pair
-      pairs.forEach((pair) => {
+      const pairs = (event as IEventCollision<Engine>).pairs
+      pairs.forEach((pair: Pair) => {
         // Extract entities from Matter.js bodies
         const a = pair.bodyA.plugin?.entity as Entity | undefined
         const b = pair.bodyB.plugin?.entity as Entity | undefined
 
         if (!a || !b) return
         if (a.id !== entity.id && b.id !== entity.id) return
+        emit(Events.collision, { a, b })
 
         const other = a.id === entity.id ? b : a
         const targetLayer = a.layers.find(l => l === layer)
@@ -75,5 +63,10 @@ Layers.listen = (layer, entity) => {
   )
 }
 
-export { Layers }
-export default Layers
+export default {
+  add,
+  remove,
+  has,
+  get,
+  listen
+}

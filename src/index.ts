@@ -1,10 +1,19 @@
-import { Game, addEntity } from '../lib/Game'
-import { createDialog } from '../lib/Dialog'
-import Scene, { Scenes } from '../lib/Scene'
+import { addEntity, Game } from '../lib/Game'
+import Scene from '../lib/Scene'
 import createPlayer from './player'
 import { createRupert } from './rupert'
 
+// register global enums
+import 'lib/global'
+import './global'
+
+enum Scenes {
+  main = 'main',
+  menu = 'menu'
+}
+
 const mainScene = new Scene(Scenes.main, async (container) => {
+  console.log('Events', Events, 'Layers', Layers, 'Animations', Animations)
   const player = createPlayer()
   // Setup player
   player.set({ position: { x: 100, y: 100 } })
@@ -13,6 +22,7 @@ const mainScene = new Scene(Scenes.main, async (container) => {
   const rupert = createRupert()
   // Setup Rupert
   rupert.set({ position: { x: 300, y: 300 } })
+  console.log('Rupert', rupert)
   addEntity(rupert)
 })
 

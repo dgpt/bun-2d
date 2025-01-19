@@ -1,5 +1,5 @@
-import { Actor } from '../lib/Actor'
-import Layers from 'lib/Layers'
+import { Actor } from 'lib/Actor'
+import Layer from 'lib/layer'
 
 export default function createPlayer() {
   const player = new Actor('c01-0', {
@@ -9,6 +9,6 @@ export default function createPlayer() {
       }
     }
   })
-  Layers.add(Layers.player, player)
+  Layer.add(Layers.player, player)
   return player
 }

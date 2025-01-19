@@ -1,9 +1,9 @@
+import 'lib/global'
 import { Application, Assets, type Texture } from 'pixi.js'
 import { Engine, Runner, Events as MatterEvents } from 'matter-js'
-import { Events, emit } from './events'
-import { initCollisions } from './collisions'
-import Layers, { type Layer } from './Layers'
-import type { Entity } from './Entity'
+import { emit, on } from 'lib/events'
+import { Entity } from 'lib/Entity'
+import Layer from 'lib/layer'
 
 export interface GameSettings {
   backgroundColor?: number | string
@@ -74,9 +74,6 @@ export class Game {
       isPaused: false
     }
 
-    // Initialize collision detection
-    initCollisions()
-
     // Setup game loop
     app.ticker.add(() => {
       if (!state || state.isPaused) return
@@ -85,7 +82,7 @@ export class Game {
       Engine.update(engine, app.ticker.deltaMS)
 
       // Update all entities
-      for (const entity of Layers.entities.entities) {
+      for (const entity of Layer.get(Layers.entities)) {
         entity.update()
       }
     })
@@ -136,21 +133,21 @@ export class Game {
     state.isPaused = !state.isPaused
     emit(Events.pauseChange, state.isPaused)
   }
-}
 
-// Helper functions for entity management
-export const addEntity = (entity: Entity): void => {
-  const { container } = getState()
-  container.addChild(entity)
-  Layers.entities.entities.add(entity)
-}
+  // if you feel like using Game as a namespace
+  static addEntity(entity: Entity): void {
+    getState().container.addChild(entity)
+    Layer.add(Layers.entities, entity)
+  }
 
-export const removeEntity = (entity: Entity, layer?: Layer): void => {
-  const { container } = getState()
-  container.removeChild(entity)
-  if (layer) {
-    Layers[layer].entities.remove(entity)
-  } else {
-    Layers.entities.entities.remove(entity)
+  static removeEntity(entity: Entity): void {
+    getState().container.removeChild(entity)
+    Layer.remove(Layers.entities, entity)
   }
 }
+
+// if you just want functions
+export const addEntity = (entity: Entity): void => Game.addEntity(entity)
+export const removeEntity = (entity: Entity): void => Game.removeEntity(entity)
+
+export default Game
