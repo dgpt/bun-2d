@@ -111,50 +111,105 @@ entity.on(Layers.npc, (npc) => {
 })
 ```
 
-### Layer System (`Layers.ts`)
-Manages rendering and collision layers with type-safe layer definitions.
+### Layer System (`global.ts`)
+Layers are now defined as global enums for better type safety and extensibility.
 
 ```typescript
-// src/layers.ts
-// Define game-specific layers
-import Layers from 'lib/Layers'
-// Register game layers
-export default new Layers('player', 'npc', 'item')
+// Core game layers are defined in global.ts
+enum Layers {
+  entities = 'entities'
+}
 
-// src/player.ts
-// Use in entities
+// Extend layers in your game's global.ts
+enum Layers {
+  player = 'player',
+  npc = 'npc',
+  item = 'item'
+}
+
+// Use layers in your code
 entity.layers.add(Layers.player)
 entity.on(Layers.npc, (npc) => {
   // Handle NPC collision
 })
 
-
-// accessing entities from a layer
-const entities = Layers.player.entities
-// accessing all entities in game
-const allEntities = Layers.entities.entities
-// accessing entities listening to a layer
-const listeners = Layers.player.listeners
+// Access entities in a layer
+const entities = Layer.get(Layers.player)
 ```
 
-### Animation System (`animations.ts`)
-Handles sprite animations with type-safe animation definitions.
+### Event System (`global.ts`, `events.ts`)
+Events are now defined as global enums with strong typing for event data.
 
 ```typescript
-// Register game animations
+// Core events defined in global.ts
+enum Events {
+  // System events
+  cleanup = 'cleanup',
+  sceneChange = 'sceneChange',
+  pauseChange = 'pauseChange',
+
+  // Game events
+  collision = 'collision',
+  animation = 'animation',
+  // ... more built-in events
+}
+
+// Extend with custom events in your game's global.ts
+enum Events {
+  playerLevelUp = 'playerLevelUp',
+  itemPickup = 'itemPickup'
+}
+
+// Define event data types
+interface EventData {
+  [Events.playerLevelUp]: { level: number }
+  [Events.itemPickup]: { itemId: string }
+}
+
+// Use events with type safety
+emit(Events.playerLevelUp, { level: 5 })
+on(Events.itemPickup, (data) => {
+  console.log(`Picked up item: ${data.itemId}`)
+})
+```
+
+### Animation System (`global.ts`)
+Animations are now defined as global enums with built-in directional variants.
+
+```typescript
+// Core animations defined in global.ts
+enum Animations {
+  // Base animations
+  moving = 'moving',
+  stopping = 'stopping',
+  stopped = 'stopped',
+  idle = 'idle',
+
+  // Directional variants
+  movingUp = 'movingUp',
+  movingDown = 'movingDown',
+  movingLeft = 'movingLeft',
+  movingRight = 'movingRight',
+  // ... more directional variants
+}
+
+// Extend with custom animations in your game's global.ts
+enum Animations {
+  attack = 'attack',
+  attackUp = 'attackUp',
+  attackDown = 'attackDown'
+}
+
+// Use animations
+entity.playAnimation(Animations.idle)
+entity.playAnimation(Animations.movingRight)
+
+// Register animation frames
 entity.animate({
-  // system animations
-  idle: ['idleFrame1', 'idleFrame2'],
-  // custom animations
-  run: ['runFrame1', 'runFrame2', 'runFrame3'],
-  attack: ['attackFrame1', 'attackFrame2'],
+  [Animations.idle]: ['idle1', 'idle2'],
+  [Animations.attack]: ['attack1', 'attack2'],
   frameRate: 12
 })
-
-// Play animation
-import Animations from 'lib/animations'
-entity.playAnimation(Animations.idle)
-entity.playAnimation(Animations.run)
 ```
 
 ### Plugin System (`Plugin.ts`)
@@ -196,32 +251,6 @@ const player = new Entity('player', {
     }
   }
 })
-```
-
-### Event System (`events.ts`)
-Robust event handling with type-safe event definitions.
-
-```typescript
-// src/events.ts
-// Define custom events
-declare module 'lib/events' {
-  interface EventData {
-    'player:levelup': { level: number }
-    'item:pickup': { itemId: string }
-  }
-}
-// register custom events
-export default new Events('player:levelup', 'item:pickup')
-
-// src/player.ts
-import Events from 'lib/events'
-// Listen for events
-entity.on(Events.playerLevelup, (data) => {
-  console.log(`Level up to ${data.level}!`)
-})
-
-// Emit events
-emit(Events.itemPickup, { itemId: 'potion' })
 ```
 
 ### Dialog System (`Dialog.ts`)
