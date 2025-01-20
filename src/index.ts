@@ -35,7 +35,7 @@ export const startGame = async () => {
 
   // Load assets
   await game.load({
-    spritesheets: ['/spritesheets/c01.json']
+    spritesheets: ['/spritesheets/char01.json']
   })
 
   // Start game loop

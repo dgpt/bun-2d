@@ -298,7 +298,6 @@ const player = new Entity('player', {
     movement: {
       type: 'top-down',
       speed: 5,
-      spriteDirection: { x: 1, y: 0 }
     }
   }
 })

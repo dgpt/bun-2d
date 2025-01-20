@@ -1,27 +1,25 @@
 import { Entity } from 'lib/Entity'
-import type { MovementSettings, Target } from '../types'
+import type { MovementSettings } from '../settings'
 import { on } from 'lib/events'
-import { handleMovementAnimation } from '../animate'
-import { applyMovementForce, normalizeDirection } from '../move'
 import { MovementPlugin } from '../MovementPlugin'
 import { findPath, getNextPathPoint, clearPath, hasActivePath } from '../pathfinding'
-import { DEFAULT_MOVEMENT_SETTINGS } from '../settings'
 import Layer from 'lib/layer'
 
 class TouchMovementPlugin extends MovementPlugin {
-  private target?: Target
-  private lastVelocity = 0
-  private stuckCounter = 0
+  private target?: Entity | { x: number, y: number }
 
   init(entity: Entity, settings?: MovementSettings) {
-    // Initialize with default movement settings
-    const mergedSettings = {
-      ...DEFAULT_MOVEMENT_SETTINGS,
+    // Increase force for touch movement to match keyboard feel
+    const touchSettings = {
       ...settings,
-      // Increase force for touch movement to match keyboard feel
-      force: (settings?.force || DEFAULT_MOVEMENT_SETTINGS.force) * 20
+      force: (settings?.force ?? 0.002) * 1.2,
+      physics: {
+        ...settings?.physics,
+        // Slightly higher air friction for smoother pathfinding movement
+        frictionAir: (settings?.physics?.frictionAir ?? 0.2) * 1.2
+      }
     }
-    super.init(entity, mergedSettings)
+    super.init(entity, touchSettings)
 
     // Function to make a single entity interactive
     const makeEntityInteractive = (e: Entity) => {
@@ -30,7 +28,6 @@ class TouchMovementPlugin extends MovementPlugin {
         e.cursor = 'pointer'
         e.hitArea = e.getBounds()
         e.on(Events.pointerTap, () => {
-          console.log('entity tap', e)
           // Set new target and path using physics body position
           this.target = e
           findPath(entity, e.body.position, e)
@@ -42,18 +39,15 @@ class TouchMovementPlugin extends MovementPlugin {
     for (const e of Layer.get(Layers.entities)) {
       makeEntityInteractive(e)
     }
-    console.log('events', Events)
 
     // Listen for new entities and make them interactive too
     entity.gc(
-      on(Events.entityAdded, (entity) => {
-        makeEntityInteractive(entity)
+      on(Events.entityAdded, (e) => {
+        makeEntityInteractive(e)
       }),
 
       // Handle stage clicks for non-entity movement
       on(Events.pointerDown, ({ x, y }) => {
-        console.log('pointer down', x, y)
-
         // Check if we're clicking near an entity
         const nearestEntity = Layer.get(Layers.entities).find((e: Entity) => {
           if (e.id === entity.id) return false
@@ -75,33 +69,27 @@ class TouchMovementPlugin extends MovementPlugin {
         }
       }),
 
-      // Handle keyboard input by clearing the path only if we have a target
+      // Handle keyboard input by clearing the path
       on(Events.keyDown, () => {
-        clearPath(entity)
-        this.target = undefined
-        this.stuckCounter = 0
+        if (this.target) {
+          this.stopMovement(entity)
+        }
       }),
 
-      // Handle collisions
+      // Handle collisions with target
       on(Events.collision, ({ a, b }) => {
         const otherEntity = a?.id === entity?.id ? b : a
-        console.log('collision', otherEntity, this.target)
         if (this.target && this.target instanceof Entity && otherEntity?.id === this.target.id) {
-          console.log('collision with target')
-          clearPath(entity)
-          this.target = undefined
-          this.stuckCounter = 0
+          this.stopMovement(entity)
         }
       })
     )
   }
 
   update(entity: Entity) {
-    if (!this.target) return
-
     // Check if we have an active path first
     if (!hasActivePath(entity)) {
-      this.stopMovement(entity)
+      super.update(entity)
       return
     }
 
@@ -112,20 +100,25 @@ class TouchMovementPlugin extends MovementPlugin {
         y: nextPoint.y - entity.body.position.y
       }
 
-      // Apply force more directly to match keyboard movement feel
-      const normalized = normalizeDirection(dir)
-      applyMovementForce(entity, normalized.x * 1.5, normalized.y * 1.5) // Boost force application
-      handleMovementAnimation(entity, normalized)
-      return
+      // Normalize direction
+      const length = Math.sqrt(dir.x * dir.x + dir.y * dir.y)
+      if (length > 0) {
+        dir.x /= length
+        dir.y /= length
+      }
+
+      this.setDirection(entity, dir)
+    } else {
+      this.stopMovement(entity)
     }
 
-    this.stopMovement(entity)
+    super.update(entity)
   }
 
   private stopMovement(entity: Entity) {
     clearPath(entity)
     this.target = undefined
-    this.stuckCounter = 0
+    this.setDirection(entity, { x: 0, y: 0 })
   }
 }
 

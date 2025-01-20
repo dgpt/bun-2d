@@ -1,27 +1,20 @@
 import type { Entity } from 'lib/Entity'
-import type { MovementSettings } from 'lib/plugs/movement'
+import type { MovementSettings } from '../settings'
 import { on } from 'lib/events'
 import { Keys } from 'lib/keys'
-import { handleMovementAnimation } from '../animate'
-import { getMovementDirection, setMovementDirection, applyMovementForce, normalizeDirection } from '../move'
 import { MovementPlugin } from '../MovementPlugin'
-import { DEFAULT_MOVEMENT_SETTINGS } from '../settings'
 
 class KeyboardMovementPlugin extends MovementPlugin {
   init(entity: Entity, settings?: MovementSettings) {
-    // Initialize with default movement settings
-    const mergedSettings = {
-      ...DEFAULT_MOVEMENT_SETTINGS,
-      ...settings
-    }
-    super.init(entity, mergedSettings)
+    super.init(entity, settings)
 
-    console.log('KeyboardMovementPlugin init', entity)
     // Register keyboard event handlers
     entity.gc(
       on(Events.keyDown, (key) => {
-        console.log('keyDown', key)
-        const dir = getMovementDirection(entity)
+        if (entity.static) return
+
+        const data = this.getMovementData(entity)
+        const dir = { ...data.direction }
 
         // Update movement direction based on key
         switch (key.toLowerCase()) {
@@ -43,14 +36,14 @@ class KeyboardMovementPlugin extends MovementPlugin {
             break
         }
 
-        setMovementDirection(entity, dir)
+        this.setDirection(entity, dir)
       }),
 
       on(Events.keyUp, (key) => {
-        // Don't process input if entity is static
         if (entity.static) return
 
-        const dir = getMovementDirection(entity)
+        const data = this.getMovementData(entity)
+        const dir = { ...data.direction }
 
         // Reset movement direction if it matches the released key
         switch (key.toLowerCase()) {
@@ -71,26 +64,14 @@ class KeyboardMovementPlugin extends MovementPlugin {
             if (dir.x === 1) dir.x = 0
             break
         }
-        setMovementDirection(entity, dir)
+
+        this.setDirection(entity, dir)
       })
     )
-  }
-
-  update(entity: Entity) {
-    // Don't apply forces if entity is static
-    if (entity.static) return
-
-    const dir = getMovementDirection(entity)
-    if (dir.x === 0 && dir.y === 0) return
-
-    // Always normalize direction to ensure consistent force magnitude
-    const normalized = normalizeDirection(dir)
-    applyMovementForce(entity, normalized.x, normalized.y)
-    handleMovementAnimation(entity, normalized)
   }
 }
 
 export const keyboard = new KeyboardMovementPlugin('topDown:keyboard', {
   init: KeyboardMovementPlugin.prototype.init,
-  update: KeyboardMovementPlugin.prototype.update
+  update: MovementPlugin.prototype.update
 })

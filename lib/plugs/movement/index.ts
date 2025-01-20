@@ -1,6 +1,5 @@
 // Core movement functionality
-export * from './move'
-export * from './animate'
+export * from './MovementPlugin'
 
 // Top-down movement plugins
 export * from './top-down'

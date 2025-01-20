@@ -97,14 +97,43 @@ export class Game {
     const { textures, animations } = getState()
 
     if (options.spritesheets) {
+      // First, add all spritesheets to PIXI's asset loader
       for (const path of options.spritesheets) {
-        const sheet = await Assets.load(path)
-        Object.assign(textures, sheet.textures)
+        await Assets.load(path)
+      }
+
+      // Now process each loaded spritesheet
+      for (const path of options.spritesheets) {
+        const sheet = await Assets.get(path)
+        console.log('Loaded spritesheet:', path)
+
+        // Add individual textures to our cache
+        for (const [key, texture] of Object.entries(sheet.textures)) {
+          textures[key] = texture as Texture
+        }
+
+      // Add animations to our cache
         if (sheet.animations) {
+          // Store animations directly - they're already Texture arrays
           Object.assign(animations, sheet.animations)
         }
       }
+
+      console.log('Final animations:', Object.fromEntries(
+        Object.entries(animations).map(([k, v]) => [k, Array.isArray(v) ? v.length : v])
+      ))
+      console.log('Final textures:', Object.keys(textures))
     }
+  }
+
+  isTextureLoaded(name: string): boolean {
+    const { textures } = getState()
+    return name in textures
+  }
+
+  getTexture(name: string): Texture | undefined {
+    const { textures } = getState()
+    return textures[name]
   }
 
   start(): void {

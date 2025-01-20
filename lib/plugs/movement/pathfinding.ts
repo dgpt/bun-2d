@@ -1,4 +1,4 @@
-import { Grid, BiBreadthFirstFinder, DiagonalMovement } from 'pathfinding'
+import PF, { Grid, DiagonalMovement } from 'pathfinding'
 import { Entity } from 'lib/Entity'
 import type { IPointData } from 'pixi.js'
 import { getState } from 'lib/Game'
@@ -6,14 +6,28 @@ import { on } from 'lib/events'
 import { Body } from 'matter-js'
 import type { Target, PathData } from './types'
 import Layer from 'lib/layer'
-// Grid size for pathfinding (smaller = more precise but slower)
-const GRID_CELL_SIZE = 32
+import { DEFAULT_MOVEMENT_SETTINGS, type MovementSettings } from './settings'
+
+// Remove the constant since we're using settings
+// const GRID_CELL_SIZE = 32
 
 // Store active paths for entities
 const activePaths = new WeakMap<Entity, PathData>()
 
 // Track which entities have collision handlers
 const collisionHandlers = new WeakSet<Entity>()
+
+const getSettings = (entity: Entity): Required<MovementSettings> => {
+  // Check for settings from any top-down plugin
+  const touchSettings = entity.plugins.get('topDown:touch') as MovementSettings
+  const mouseSettings = entity.plugins.get('topDown:mouse') as MovementSettings
+
+  return {
+    ...DEFAULT_MOVEMENT_SETTINGS,
+    ...mouseSettings,
+    ...touchSettings // Touch settings take precedence if both are present
+  }
+}
 
 export const clearPath = (entity: Entity) => {
   activePaths.delete(entity)
@@ -25,6 +39,8 @@ export const hasActivePath = (entity: Entity) => {
 
 const setupCollisionHandler = (entity: Entity) => {
   if (collisionHandlers.has(entity)) return
+
+  const settings = getSettings(entity)
 
   entity.gc(
     on(Events.collision, () => {
@@ -44,7 +60,7 @@ const setupCollisionHandler = (entity: Entity) => {
         const dy = pathData.destination.y - entity.y
         const distSq = dx * dx + dy * dy
 
-        if (distSq > GRID_CELL_SIZE * GRID_CELL_SIZE) {
+        if (distSq > settings.pathfinding.gridCellSize * settings.pathfinding.gridCellSize) {
           // Try to find a path from our current position
           const newPath = findPath(entity, pathData.destination, pathData.target)
 
@@ -58,7 +74,7 @@ const setupCollisionHandler = (entity: Entity) => {
         }
 
         pathData.isRecalculating = false
-      }, 250) // Longer delay to ensure physics has settled
+      }, settings.pathfinding.recalculateDelay)
     })
   )
 
@@ -70,6 +86,8 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
   if (!pathData || pathData.path.length === 0) {
     return null
   }
+
+  const settings = getSettings(entity)
 
   // If we have a target entity, update the path end point
   if (pathData.target instanceof Entity) {
@@ -88,8 +106,8 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
     }
 
     if (
-      Math.abs(pathData.target.x - lastPoint.x) > GRID_CELL_SIZE ||
-      Math.abs(pathData.target.y - lastPoint.y) > GRID_CELL_SIZE
+      Math.abs(pathData.target.x - lastPoint.x) > settings.pathfinding.gridCellSize ||
+      Math.abs(pathData.target.y - lastPoint.y) > settings.pathfinding.gridCellSize
     ) {
       // Recalculate path if target has moved significantly
       const newPath = findPath(entity, { x: pathData.target.x, y: pathData.target.y }, pathData.target)
@@ -107,7 +125,7 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
   const dy = nextPoint.y - entity.y
 
   // If we're close enough to the next point, remove it and get the next one
-  if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+  if (Math.abs(dx) < settings.pathfinding.nodeProximity && Math.abs(dy) < settings.pathfinding.nodeProximity) {
     pathData.path.shift()
     // Return null if no more points, otherwise return next point directly
     return pathData.path.length === 0 ? null : pathData.path[0]
@@ -117,14 +135,15 @@ export const getNextPathPoint = (entity: Entity): IPointData | null => {
 }
 
 const markEntityOnGrid = (grid: Grid, entity: Entity) => {
+  const settings = getSettings(entity)
   const bounds = entity.getBounds()
-  const startX = Math.max(0, Math.floor(bounds.left / GRID_CELL_SIZE))
-  const startY = Math.max(0, Math.floor(bounds.top / GRID_CELL_SIZE))
-  const endX = Math.min(grid.width - 1, Math.ceil(bounds.right / GRID_CELL_SIZE))
-  const endY = Math.min(grid.height - 1, Math.ceil(bounds.bottom / GRID_CELL_SIZE))
+  const startX = Math.max(0, Math.floor(bounds.left / settings.pathfinding.gridCellSize))
+  const startY = Math.max(0, Math.floor(bounds.top / settings.pathfinding.gridCellSize))
+  const endX = Math.min(grid.width - 1, Math.ceil(bounds.right / settings.pathfinding.gridCellSize))
+  const endY = Math.min(grid.height - 1, Math.ceil(bounds.bottom / settings.pathfinding.gridCellSize))
 
-  // Add some padding around entities to prevent getting too close
-  const padding = 1
+  // Add padding around entities to prevent getting too close
+  const padding = settings.pathfinding.padding
   for (let x = startX - padding; x <= endX + padding; x++) {
     for (let y = startY - padding; y <= endY + padding; y++) {
       if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
@@ -140,6 +159,7 @@ const clampToGrid = (value: number, max: number) => {
 
 export const findPath = (entity: Entity, destination: IPointData, target?: Target) => {
   const { app } = getState()
+  const settings = getSettings(entity)
 
   // Clear any existing path before starting a new one
   clearPath(entity)
@@ -155,7 +175,8 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
   }
 
   // Skip pathfinding if target is at current position (used for stopping)
-  if (Math.abs(destination.x - entity.x) < 5 && Math.abs(destination.y - entity.y) < 5) {
+  if (Math.abs(destination.x - entity.x) < settings.pathfinding.nodeProximity &&
+    Math.abs(destination.y - entity.y) < settings.pathfinding.nodeProximity) {
     return []
   }
 
@@ -163,8 +184,8 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
   setupCollisionHandler(entity)
 
   // Create a grid based on the game dimensions
-  const gridWidth = Math.ceil(app.screen.width / GRID_CELL_SIZE)
-  const gridHeight = Math.ceil(app.screen.height / GRID_CELL_SIZE)
+  const gridWidth = Math.ceil(app.screen.width / settings.pathfinding.gridCellSize)
+  const gridHeight = Math.ceil(app.screen.height / settings.pathfinding.gridCellSize)
   const grid = new Grid(gridWidth, gridHeight)
 
   // Mark static entities and other obstacles
@@ -174,16 +195,16 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
     markEntityOnGrid(grid, other)
   }
 
-  // Create finder instance
-  const finder = new BiBreadthFirstFinder({
-    diagonalMovement: DiagonalMovement.Always
+  // Create A* finder instance with settings
+  const finder = new PF.BiAStarFinder({
+    diagonalMovement: settings.pathfinding.diagonalMovement
   })
 
   // Convert and clamp positions to grid coordinates
-  const startX = clampToGrid(entity.x / GRID_CELL_SIZE, gridWidth)
-  const startY = clampToGrid(entity.y / GRID_CELL_SIZE, gridHeight)
-  const endX = clampToGrid(destination.x / GRID_CELL_SIZE, gridWidth)
-  const endY = clampToGrid(destination.y / GRID_CELL_SIZE, gridHeight)
+  const startX = clampToGrid(entity.x / settings.pathfinding.gridCellSize, gridWidth)
+  const startY = clampToGrid(entity.y / settings.pathfinding.gridCellSize, gridHeight)
+  const endX = clampToGrid(destination.x / settings.pathfinding.gridCellSize, gridWidth)
+  const endY = clampToGrid(destination.y / settings.pathfinding.gridCellSize, gridHeight)
 
   // Clone grid before pathfinding to avoid modifying original
   const gridClone = grid.clone()
@@ -196,19 +217,22 @@ export const findPath = (entity: Entity, destination: IPointData, target?: Targe
     return []
   }
 
-  // Convert path back to world coordinates
-  const worldPath = path.map(([x, y]) => ({
-    x: x * GRID_CELL_SIZE + GRID_CELL_SIZE / 2,
-    y: y * GRID_CELL_SIZE + GRID_CELL_SIZE / 2
+  // Smooth the path while still in grid coordinates
+  const smoothedGridPath = PF.Util.compressPath(path)
+
+  // Convert smoothed path to world coordinates
+  const smoothedPath = smoothedGridPath.map((point: number[]) => ({
+    x: point[0] * settings.pathfinding.gridCellSize + settings.pathfinding.gridCellSize / 2,
+    y: point[1] * settings.pathfinding.gridCellSize + settings.pathfinding.gridCellSize / 2
   }))
 
   // Store path and destination
   activePaths.set(entity, {
-    path: worldPath,
+    path: smoothedPath,
     target,
     destination,
     isRecalculating: false
   })
 
-  return worldPath
+  return smoothedPath
 }

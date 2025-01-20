@@ -38,9 +38,15 @@ export class Entity extends Container {
   private animations: Partial<Record<Animations, string | string[]>> = {}
   private currentSprite?: Sprite | AnimatedSprite
   private updaters = new Set<() => void>()
+  private lastDirection: IPointData = { x: 1, y: 0 }
+  private baseScale = { x: 1, y: 1 }
+  private initialTexture: string | string[]
 
   constructor(textureNameOrNames: string | string[], options: EntityOptions = {}) {
     super()
+
+    // Store initial texture for resetting
+    this.initialTexture = textureNameOrNames
 
     // Create sprite first to get dimensions
     this.setSprite(textureNameOrNames)
@@ -129,20 +135,48 @@ export class Entity extends Container {
       this.removeChild(this.currentSprite)
     }
 
-    // Create appropriate sprite type based on input
-    if (Array.isArray(textureNameOrNames)) {
-      const sprite = new AnimatedSprite(
-        textureNameOrNames.map(name => Texture.from(name))
-      )
+    const { animations, textures } = getState()
+    console.log('Setting sprite for:', textureNameOrNames)
+
+    // First check if it's an animation name
+    if (typeof textureNameOrNames === 'string' && animations[textureNameOrNames]) {
+      // Get the textures for this animation
+      const frames = animations[textureNameOrNames]
+      console.log(`Found animation ${textureNameOrNames}, frame count:`, frames.length)
+
+      const sprite = new AnimatedSprite(frames)
+      sprite.animationSpeed = this.animationSpeed
+      sprite.play()
+      this.currentSprite = sprite
+    } else if (Array.isArray(textureNameOrNames)) {
+      // Array of texture names
+      const frames = textureNameOrNames.map(name => {
+        const texture = textures[name]
+        if (!texture) {
+          console.warn(`Texture not found for frame: ${name}`)
+          return Texture.EMPTY
+        }
+        return texture
+      })
+
+      const sprite = new AnimatedSprite(frames)
       sprite.animationSpeed = this.animationSpeed
       sprite.play()
       this.currentSprite = sprite
     } else {
-      this.currentSprite = new Sprite(Texture.from(textureNameOrNames))
+      // Single texture
+      const texture = textures[textureNameOrNames]
+      if (!texture) {
+        console.warn(`Texture not found: ${textureNameOrNames}`)
+        this.currentSprite = new Sprite(Texture.EMPTY)
+      } else {
+        this.currentSprite = new Sprite(texture)
+      }
     }
 
     // Set common properties
     this.currentSprite.anchor.set(0.5)
+    this.currentSprite.scale.copyFrom(this.baseScale)
     this.addChild(this.currentSprite)
     return this.currentSprite
   }
@@ -160,6 +194,7 @@ export class Entity extends Container {
   }
 
   playAnimation(name: Animations): Sprite | AnimatedSprite | undefined {
+    console.log('playing animation', name, this.animations[name], this.animations)
     // Check if it's a registered animation
     const animation = this.animations[name]
     if (animation) {
@@ -272,12 +307,14 @@ export class Entity extends Container {
       plugin.init(this, settings)
     }
 
+    // Add update function to updaters if it exists
     if (plugin.update) {
-      this.updaters.add(() => plugin.update?.(this))
+      const boundUpdate = plugin.update.bind(plugin)
+      this.updaters.add(() => boundUpdate(this))
     }
 
+    // Register all plugin events
     if (plugin.events) {
-      // Register all plugin events
       for (const [eventName, handler] of Object.entries(plugin.events)) {
         if (!handler) continue
         this.on(eventName as Events, handler.bind(plugin, this) as EventHandler<Events>)
@@ -285,5 +322,42 @@ export class Entity extends Container {
     }
 
     return this
+  }
+
+  /**
+   * Checks if an animation exists for the given name
+   */
+  hasAnimation(name: Animations): boolean {
+    return name in this.animations
+  }
+
+  /**
+   * Sets the scale of the sprite, preserving the base scale
+   */
+  setScale(scale: IPointData): void {
+    if (this.currentSprite) {
+      this.currentSprite.scale.set(
+        this.baseScale.x * scale.x,
+        this.baseScale.y * scale.y
+      )
+    }
+  }
+
+  /**
+   * Sets the base scale for the sprite (before any mirroring)
+   */
+  setBaseScale(scale: IPointData): void {
+    this.baseScale = { ...scale }
+    if (this.currentSprite) {
+      this.currentSprite.scale.copyFrom(this.baseScale)
+    }
+  }
+
+  /**
+   * Resets the sprite to its initial texture and scale
+   */
+  resetSprite(): void {
+    this.setSprite(this.initialTexture)
+    this.setScale({ x: 1, y: 1 })
   }
 }
